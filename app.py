@@ -211,7 +211,7 @@ with tab2:
         st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
         st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
         
-        st.info("📌 Send Money to: **01735943876** (bKash / Nagad Personal)")
+        st.info("📌 Send Money to: **01735943876** (bKash / Nagad / Upay / Rocket Personal)")
         
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
