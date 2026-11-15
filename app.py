@@ -428,7 +428,7 @@ with tab2:
                     st.warning("Please fill in all fields.")
 
     else:
-        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
+        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳1,000 BDT/month)")
         st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
         
         if payment_number:
