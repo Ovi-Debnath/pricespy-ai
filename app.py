@@ -216,7 +216,7 @@ def get_competitor_data(url):
     except Exception as e:
         raise Exception(f"Failed to scrape URL. Details: {e}")
 
-# 3. Robust AI Model Switcher & Strategy Generator
+# 3. AI Strategy Generator
 def get_ai_counter_strategy(product_name, baseline_price, current_price):
     prompt = (
         f"You are an expert e-commerce pricing strategist. "
@@ -316,26 +316,28 @@ def update_github_clients_file(clients_list, commit_message="Update clients.json
             return str(e)
     return True
 
-# 6. Function to send Activation Email
-def send_activation_email(to_email, items_list):
+# 6. Function to send Activation Email with Live Verified Prices
+def send_activation_email(to_email, verified_items_list):
     clean_email = to_email.split(" [")[0].strip()
     if not sender_email or not sender_password:
         return False, "Sender email or password credentials missing in secrets."
     
     formatted_items = []
-    for item in items_list:
-        if isinstance(item, dict):
-            formatted_items.append(f"- URL: {item.get('url')} | Your Baseline: {item.get('baseline_price')}")
-        else:
-            formatted_items.append(f"- URL: {item}")
+    for item in verified_items_list:
+        formatted_items.append(
+            f"• Product: {item.get('title', 'N/A')}\n"
+            f"  URL: {item.get('url')}\n"
+            f"  Your Baseline Price: ৳{item.get('baseline_price')}\n"
+            f"  Verified Live Price: ৳{item.get('live_price')}\n"
+        )
             
     items_str = "\n".join(formatted_items)
     
-    subject = "🚀 Your PriceSpy AI Monitoring is Now Active!"
+    subject = "🚀 Your PriceSpy AI Monitoring is Now Live & Verified!"
     body = (
         f"Hello,\n\n"
-        f"Your payment has been successfully verified and your 24/7 competitor price monitoring bot is now LIVE!\n"
-        f"Tracked Products:\n{items_str}\n\n"
+        f"Your payment has been successfully verified, and our system has successfully tested your product links. Your 24/7 competitor price monitoring bot is now LIVE!\n\n"
+        f"Tracked Products & Verified Status:\n{items_str}\n"
         f"Our bot will check competitor prices regularly and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
         f"Thank you for using PriceSpy AI!"
     )
@@ -353,12 +355,12 @@ def send_activation_email(to_email, items_list):
     except Exception as e:
         return False, str(e)
 
-# Save new client function with multiple product-price pairs
+# Save new client function
 def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
     clients = load_clients_data()
     new_entry = {
         "client_email": email,
-        "products": product_items, # [{"url": "...", "baseline_price": 500.0}, ...]
+        "products": product_items,
         "plan": plan_name,
         "approved": not is_local,
         "trx_id": trx_id
@@ -470,7 +472,6 @@ with tab2:
             local_email = st.text_input("Your Email (for receiving alerts)")
             st.markdown(f"**Enter Competitor URLs & Your Baseline Prices (Up to {max_links} products):**")
             
-            # ডাইনামিক ইনপুট রো: প্রতিটি প্রোডাক্টের জন্য আলাদা URL ও আলাদা Baseline Price
             product_inputs = []
             for idx in range(max_links):
                 c1, c2 = st.columns([3, 1])
@@ -491,7 +492,6 @@ with tab2:
             trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
-                # যেসব বক্সে ইউজার URL দিয়েছেন সেগুলো ফিল্টার করে নেওয়া
                 valid_products = [
                     {"url": u.strip(), "baseline_price": float(p)} 
                     for u, p in product_inputs if u.strip()
@@ -541,35 +541,49 @@ with tab3:
                 st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
                 st.write(f"- **Tracked Products:**")
                 
-                # নতুন এবং পুরোনো উভয় ডেটা স্ট্রাকচার সাপোর্ট করবে
-                products = client.get('products')
-                if products:
-                    for idx, item in enumerate(products):
-                        st.write(f"  {idx+1}. {item['url']} — **Baseline:** `৳{item['baseline_price']}`")
-                else:
-                    # ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য
-                    old_urls = client.get('urls', [client.get('url', 'N/A')])
-                    old_base = client.get('baseline_price', 0)
-                    for idx, u in enumerate(old_urls):
-                        st.write(f"  {idx+1}. {u} — **Baseline:** `{old_base}`")
+                products = client.get('products', [])
+                for idx, item in enumerate(products):
+                    st.write(f"  {idx+1}. {item.get('url')} — **Baseline:** `৳{item.get('baseline_price')}`")
                 
                 col_a, col_b = st.columns(2)
                 
+                # Approve button with live link testing and email confirmation
                 if not client.get("approved", True):
                     if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
-                        clients_data[i]["approved"] = True
-                        res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
-                        
-                        if res is True:
-                            items_to_send = products if products else client.get('urls', [client.get('url', '')])
-                            mail_sent, mail_msg = send_activation_email(client['client_email'], items_to_send)
-                            if mail_sent:
-                                st.success(f"Client #{i+1} approved and activation email sent successfully!")
+                        with st.spinner("Testing product URLs and verifying prices before approval..."):
+                            verified_list = []
+                            link_error = None
+                            
+                            for p_item in products:
+                                u = p_item.get('url')
+                                b_price = p_item.get('baseline_price')
+                                try:
+                                    p_title, l_price = get_competitor_data(u)
+                                    verified_list.append({
+                                        "url": u,
+                                        "title": p_title,
+                                        "baseline_price": b_price,
+                                        "live_price": l_price
+                                    })
+                                except Exception as err:
+                                    link_error = f"Failed to verify URL ({u}): {err}"
+                                    break
+                            
+                            if link_error:
+                                st.error(f"❌ Cannot approve! {link_error}. Please ask the client to provide a working product URL.")
                             else:
-                                st.warning(f"Client approved and saved, but email failed: {mail_msg}")
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to sync with GitHub: {res}")
+                                clients_data[i]["approved"] = True
+                                res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
+                                
+                                if res is True:
+                                    mail_sent, mail_msg = send_activation_email(client['client_email'], verified_list)
+                                    if mail_sent:
+                                        st.success(f"Client #{i+1} approved! All product links verified and activation email sent successfully!")
+                                    else:
+                                        st.warning(f"Client approved and saved, but email failed: {mail_msg}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to sync with GitHub: {res}")
                 
                 if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
                     removed_client = clients_data.pop(i)
