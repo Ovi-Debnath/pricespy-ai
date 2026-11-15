@@ -85,16 +85,8 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
             
     return "• Review pricing manually.\n• Monitor competitor stock levels.\n• Maintain value proposition."
 
-# 4. Sync new clients directly to GitHub clients.json with approval status
-def save_client_to_github(email, product_url, baseline, is_local=False, trx_id=""):
-    new_entry = {
-        "client_email": email,
-        "url": product_url,
-        "baseline_price": float(baseline),
-        "approved": not is_local,  # গ্লোবাল হলে সরাসরি True, লোকাল হলে False (অ্যাডমিন অ্যাপ্রুভ করলে True হবে)
-        "trx_id": trx_id
-    }
-
+# 4. Helper function to load clients (Fetches fresh from GitHub if token is available)
+def load_clients_data():
     if github_token and github_repo:
         api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
         headers = {
@@ -105,19 +97,40 @@ def save_client_to_github(email, product_url, baseline, is_local=False, trx_id="
             res = requests.get(api_url, headers=headers, timeout=10)
             if res.status_code == 200:
                 file_data = res.json()
-                sha = file_data["sha"]
                 decoded_content = base64.b64decode(file_data["content"]).decode("utf-8")
-                clients = json.loads(decoded_content)
-            else:
-                sha = None
-                clients = []
+                return json.loads(decoded_content)
+        except Exception:
+            pass
 
-            clients.append(new_entry)
-            updated_content = json.dumps(clients, indent=4)
+    # Fallback to local file
+    file_path = "clients.json"
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return json.load(f)
+    return []
+
+# 5. Helper function to save/update the entire clients list back to GitHub & local
+def update_github_clients_file(clients_list, commit_message="Update clients.json"):
+    updated_content = json.dumps(clients_list, indent=4)
+    
+    # Save locally first
+    with open("clients.json", "w") as f:
+        f.write(updated_content)
+
+    # Push to GitHub if configured
+    if github_token and github_repo:
+        api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
+        headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Accept": "application/vnd.github+json"
+        }
+        try:
+            res = requests.get(api_url, headers=headers, timeout=10)
+            sha = res.json().get("sha") if res.status_code == 200 else None
+
             encoded_content = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
-
             payload = {
-                "message": f"Add client monitoring for {email}",
+                "message": commit_message,
                 "content": encoded_content
             }
             if sha:
@@ -130,20 +143,21 @@ def save_client_to_github(email, product_url, baseline, is_local=False, trx_id="
                 return f"GitHub sync error: {put_res.json().get('message', 'Unknown error')}"
         except Exception as e:
             return str(e)
+    return True
 
-    try:
-        file_path = "clients.json"
-        if os.path.exists(file_path):
-            with open(file_path, "r") as f:
-                clients = json.load(f)
-        else:
-            clients = []
-        clients.append(new_entry)
-        with open(file_path, "w") as f:
-            json.dump(clients, f, indent=4)
-        return True
-    except Exception as e:
-        return str(e)
+# Save new client function
+def save_client_to_github(email, product_url, baseline, is_local=False, trx_id=""):
+    clients = load_clients_data()
+    new_entry = {
+        "client_email": email,
+        "url": product_url,
+        "baseline_price": float(baseline),
+        "approved": not is_local,
+        "trx_id": trx_id
+    }
+    clients.append(new_entry)
+    res = update_github_clients_file(clients, commit_message=f"Add client monitoring for {email}")
+    return res
 
 # --- UI TABS ---
 tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "🔒 Admin Dashboard"])
@@ -239,45 +253,48 @@ with tab3:
     
     admin_pass = st.text_input("Admin Password", type="password")
     
-    if admin_pass == "9973":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
+    if admin_pass == "admin123":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
         st.success("Access Granted!")
         
         try:
-            file_path = "clients.json"
-            if os.path.exists(file_path):
-                with open(file_path, "r") as f:
-                    clients_data = json.load(f)
+            clients_data = load_clients_data()
+            st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
+            
+            if len(clients_data) == 0:
+                st.info("No clients found.")
+            
+            for i, client in enumerate(clients_data):
+                st.markdown("---")
+                status_badge = "🟢 Approved" if client.get("approved", True) else "🟡 Pending Payment"
+                st.write(f"**Client #{i+1}** — Status: {status_badge}")
+                st.write(f"- **Email / Info:** `{client['client_email']}`")
+                st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
+                st.write(f"- **Tracked URL:** {client['url']}")
+                st.write(f"- **Baseline Price:** {client['baseline_price']}")
                 
-                st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
+                col_a, col_b = st.columns(2)
                 
-                for i, client in enumerate(clients_data):
-                    st.markdown("---")
-                    status_badge = "🟢 Approved" if client.get("approved", True) else "🟡 Pending Payment"
-                    st.write(f"**Client #{i+1}** — Status: {status_badge}")
-                    st.write(f"- **Email / Info:** `{client['client_email']}`")
-                    st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
-                    st.write(f"- **Tracked URL:** {client['url']}")
-                    st.write(f"- **Baseline Price:** {client['baseline_price']}")
-                    
-                    col_a, col_b = st.columns(2)
-                    
-                    # যদি পেন্ডিং থাকে, তবে অ্যাপ্রুভ করার বাটন দেখাবে
-                    if not client.get("approved", True):
-                        if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
-                            clients_data[i]["approved"] = True
-                            with open(file_path, "w") as f:
-                                json.dump(clients_data, f, indent=4)
-                            st.success(f"Client #{i+1} approved successfully!")
+                # Approve button
+                if not client.get("approved", True):
+                    if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
+                        clients_data[i]["approved"] = True
+                        res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
+                        if res is True:
+                            st.success(f"Client #{i+1} approved and saved successfully!")
                             st.rerun()
-                    
-                    if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
-                        clients_data.pop(i)
-                        with open(file_path, "w") as f:
-                            json.dump(clients_data, f, indent=4)
-                        st.warning("Client removed!")
+                        else:
+                            st.error(f"Failed to sync with GitHub: {res}")
+                
+                # Remove button
+                if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
+                    removed_client = clients_data.pop(i)
+                    res = update_github_clients_file(clients_data, commit_message=f"Remove client {removed_client['client_email']}")
+                    if res is True:
+                        st.warning("Client removed and changes saved to GitHub!")
                         st.rerun()
-            else:
-                st.info("No clients.json found.")
+                    else:
+                        st.error(f"Failed to sync with GitHub: {res}")
+                        
         except Exception as e:
             st.error(f"Error loading data: {e}")
             
