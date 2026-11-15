@@ -93,7 +93,6 @@ def save_client_to_github(email, product_url, baseline):
         "baseline_price": float(baseline)
     }
 
-    # If GitHub secrets are configured, push directly to GitHub repository
     if github_token and github_repo:
         api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
         headers = {
@@ -130,7 +129,6 @@ def save_client_to_github(email, product_url, baseline):
         except Exception as e:
             return str(e)
 
-    # Fallback local save
     try:
         file_path = "clients.json"
         if os.path.exists(file_path):
@@ -177,7 +175,6 @@ with tab2:
     st.subheader("🚀 Register & Activate 24/7 Monitoring")
     st.markdown("Choose your region to complete subscription and activate automated tracking.")
     
-    # Market Selector
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
     
     if market == "Global (International)":
@@ -190,50 +187,3 @@ with tab2:
                 <button style="background-color: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
                     Pay $49/mo via Lemon Squeezy 💳
                 </button>
-            </a>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("---")
-        with st.form("global_client_form"):
-            email = st.text_input("Your Email (used in checkout)")
-            url = st.text_input("Competitor URL to Track")
-            baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=55.00)
-            
-            if st.form_submit_button("Activate Global Bot", use_container_width=True):
-                if email and url:
-                    res = save_client_to_github(email, url, baseline)
-                    if res is True:
-                        st.success(f"✅ Global monitoring active for {email}!")
-                    else:
-                        st.error(f"Error: {res}")
-                else:
-                    st.warning("Please fill in all fields.")
-
-    else:
-        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
-        st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
-        
-        st.info("📌 Send Money to: **01700-000000** (bKash / Nagad Personal)")
-        
-        with st.form("local_client_form"):
-            local_email = st.text_input("Your Email (for receiving alerts)")
-            local_url = st.text_input("Competitor Product URL to Track")
-            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=5500.0, step=100.0)
-            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
-            
-            if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
-                if local_email and local_url and trx_id:
-                    # Appends TrxID to the email entry in clients.json for easy verification
-                    formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
-                    res = save_client_to_github(formatted_email, local_url, local_baseline)
-                    if res is True:
-                        st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
-                    else:
-                        st.error(f"Error: {res}")
-                else:
-                    st.warning("Please fill in all required fields including the Transaction ID.")
-                        st.success(f"✅ Active! Monitoring is now live for {client_email}. You will receive automated alerts whenever the price changes.")
-                    else:
-                        st.error(f"Failed to register: {result}")
-            else:
-                st.warning("Please provide both your email and the competitor URL.")
