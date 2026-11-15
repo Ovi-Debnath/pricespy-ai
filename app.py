@@ -429,7 +429,7 @@ with tab2:
 
     else:
         st.markdown("### 🇧🇩 Bangladesh Local Plan (৳1,000 BDT/month)")
-        st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
+        st.markdown("Send payment via bKash / Nagad / Upay / Rocket and enter your Transaction ID below to activate.")
         
         if payment_number:
             if st.button("📲 Show Payment Number"):
