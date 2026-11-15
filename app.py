@@ -2,6 +2,7 @@ import os
 import json
 import time
 import base64
+import random
 import smtplib
 from email.mime.text import MIMEText
 import streamlit as st
@@ -32,19 +33,53 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Function to fetch live competitor price
+# 2. Smart Function to fetch live competitor price (Updated with anti-blocking headers & fallbacks)
 def get_competitor_data(url):
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0"
+    ]
+    
+    headers = {
+        "User-Agent": random.choice(user_agents),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+    }
+    
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
+        if response.status_code != 200:
+            raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
+            
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        title = soup.find('h1').text.strip()
-        price_text = soup.find('p', class_='price_color').text
-        clean_price = price_text.replace('$', '').replace('£', '').replace('Â', '').strip()
+        # Product Title finding logic
+        title_tag = soup.find('h1') or soup.find('span', {'class': 'pdp-mod-product-badge-title'})
+        title = title_tag.text.strip() if title_tag else "E-commerce Product"
+        
+        # Price finding logic across standard & local e-commerce structures
+        price_tag = (
+            soup.find('span', {'class': 'pdp-price'}) or 
+            soup.find('span', {'class': 'a-price-whole'}) or 
+            soup.find('p', class_='price_color') or
+            soup.find('span', {'class': 'price'}) or
+            soup.find('div', {'class': 'product-price'})
+        )
+        
+        if not price_tag:
+            raise Exception("Could not locate price element. The site might be blocking direct scraping.")
+            
+        price_text = price_tag.text
+        clean_price = ''.join(c for c in price_text if c.isdigit() or c == '.')
+        
+        if not clean_price:
+            raise Exception("Extracted price is empty.")
+            
         return title, float(clean_price)
+        
     except Exception as e:
-        raise Exception(f"Failed to scrape URL. Check if the URL is valid. Details: {e}")
+        raise Exception(f"Failed to scrape URL. Details: {e}")
 
 # 3. Robust AI Model Switcher & Strategy Generator
 def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
@@ -282,7 +317,7 @@ with tab3:
     
     admin_pass = st.text_input("Admin Password", type="password")
     
-    if admin_pass == "9973":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
+    if admin_pass == "9973":
         st.success("Access Granted!")
         
         try:
