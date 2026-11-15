@@ -442,7 +442,7 @@ with tab2:
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
             local_url = st.text_input("Competitor Product URL to Track", placeholder="Paste competitor product URL here...")
-            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
+            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value="enter your baseline price", step=100.0)
             trx_id = st.text_input("bKash / Nagad / Upay / Rocket Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
