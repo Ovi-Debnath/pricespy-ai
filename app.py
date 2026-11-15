@@ -38,6 +38,25 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
+# Helper function: Daraz URL Cleaner & Converter (বড় লিংক বা নামযুক্ত লিংক ছোট ও নিখুঁত করে নেবে)
+def clean_daraz_url(url):
+    if not url:
+        return url
+    url = str(url).strip().strip("'").strip('"')
+    # যদি এটি দারাজের প্রোডাক্ট লিংক হয় এবং ভেতরে -i...-s... থাকে
+    if "daraz.com.bd/products/" in url:
+        match = re.search(r'(-i\d+-s\d+)', url)
+        if match:
+            product_id_part = match.group(1)
+            # কুয়েরি প্যারামিটারগুলো (যেমন ?scm=...) আলাদা করে রাখা
+            base_query = ""
+            if "?" in url:
+                base_query = "?" + url.split("?", 1)[1]
+            
+            # নিখুঁত ছোট লিংক তৈরি করা (যেমন: https://www.daraz.com.bd/products/-i323506437-s1541203283.html?...)
+            return f"https://www.daraz.com.bd/products/{product_id_part}.html{base_query}"
+    return url
+
 # Helper function to safely parse and validate price numbers
 UNIT_PATTERN = r'(?!\s*(?:ml|ltr|lt|l|gm|g|kg|mg|pcs|pc|cm|mm|inch|oz|watt|w|v|mah|gb|tb|%))'
 
@@ -158,7 +177,9 @@ def _fetch_via_reader(clean_url):
 
 def get_competitor_data(url):
     try:
-        clean_url = str(url).strip().strip("'").strip('"')
+        # লিংক পাওয়ার সাথে সাথেই কনভার্টার দিয়ে সেটিকে ক্লিন ও অপ্টিমাইজ করে নেওয়া
+        clean_url = clean_daraz_url(url)
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
@@ -316,7 +337,7 @@ def update_github_clients_file(clients_list, commit_message="Update clients.json
             return str(e)
     return True
 
-# 6. Function to send Activation Email with Live Verified Prices
+# 6. Function to send Activation Email
 def send_activation_email(to_email, verified_items_list):
     clean_email = to_email.split(" [")[0].strip()
     if not sender_email or not sender_password:
@@ -333,7 +354,7 @@ def send_activation_email(to_email, verified_items_list):
             
     items_str = "\n".join(formatted_items)
     
-    subject = "🚀 Your PriceSpy AI Monitoring is Now Live & Verified!"
+    subject = "🚀 Your PriceSpy AI Monitoring is Now Active & Verified!"
     body = (
         f"Hello,\n\n"
         f"Your payment has been successfully verified, and our system has successfully tested your product links. Your 24/7 competitor price monitoring bot is now LIVE!\n\n"
@@ -355,12 +376,21 @@ def send_activation_email(to_email, verified_items_list):
     except Exception as e:
         return False, str(e)
 
-# Save new client function
+# Save new client function with auto URL cleaning
 def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
+    # সেভ করার আগেই প্রতিটি লিংকের জন্য ইউআরএল কনভার্টার চালিয়ে ক্লিন করে নেওয়া
+    cleaned_items = []
+    for item in product_items:
+        cleaned_url = clean_daraz_url(item.get('url'))
+        cleaned_items.append({
+            "url": cleaned_url,
+            "baseline_price": item.get('baseline_price')
+        })
+
     clients = load_clients_data()
     new_entry = {
         "client_email": email,
-        "products": product_items,
+        "products": cleaned_items,
         "plan": plan_name,
         "approved": not is_local,
         "trx_id": trx_id
@@ -516,7 +546,7 @@ with tab2:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("Enter admin password to review paid local clients and approve/remove monitors.")
+    st.markdown("Admin password দিয়ে পেমেন্ট ভেরিফাই করুন এবং লিংক টেস্ট করে অ্যাক্টিভ করুন।")
     
     admin_pass = st.text_input("Admin Password", type="password")
     
@@ -547,38 +577,47 @@ with tab3:
                 
                 col_a, col_b = st.columns(2)
                 
-                # Approve button with live link testing and email confirmation
+                # Approve button with auto URL cleaning & live testing
                 if not client.get("approved", True):
                     if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
-                        with st.spinner("Testing product URLs and verifying prices before approval..."):
+                        with st.spinner("Cleaning URLs, testing live prices before approval..."):
                             verified_list = []
                             link_error = None
                             
+                            # ভেরিফাই করার সময়ও লিংক ক্লিন করে নেওয়া
+                            cleaned_products = []
                             for p_item in products:
-                                u = p_item.get('url')
+                                raw_u = p_item.get('url')
+                                clean_u = clean_daraz_url(raw_u)
                                 b_price = p_item.get('baseline_price')
+                                
                                 try:
-                                    p_title, l_price = get_competitor_data(u)
+                                    p_title, l_price = get_competitor_data(clean_u)
                                     verified_list.append({
-                                        "url": u,
+                                        "url": clean_u,
                                         "title": p_title,
                                         "baseline_price": b_price,
                                         "live_price": l_price
                                     })
+                                    cleaned_products.append({
+                                        "url": clean_u,
+                                        "baseline_price": b_price
+                                    })
                                 except Exception as err:
-                                    link_error = f"Failed to verify URL ({u}): {err}"
+                                    link_error = f"Failed to verify URL ({clean_u}): {err}"
                                     break
                             
                             if link_error:
-                                st.error(f"❌ Cannot approve! {link_error}. Please ask the client to provide a working product URL.")
+                                st.error(f"❌ Cannot approve! {link_error}. Please ask the client for a valid product URL.")
                             else:
                                 clients_data[i]["approved"] = True
+                                clients_data[i]["products"] = cleaned_products
                                 res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
                                 
                                 if res is True:
                                     mail_sent, mail_msg = send_activation_email(client['client_email'], verified_list)
                                     if mail_sent:
-                                        st.success(f"Client #{i+1} approved! All product links verified and activation email sent successfully!")
+                                        st.success(f"Client #{i+1} approved! URLs auto-cleaned, tested, and activation email sent successfully!")
                                     else:
                                         st.warning(f"Client approved and saved, but email failed: {mail_msg}")
                                     st.rerun()
