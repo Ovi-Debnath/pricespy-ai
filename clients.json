@@ -8,5 +8,10 @@
         "client_email": "ovidebnath63@gmail.com",
         "url": "http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
         "baseline_price": 55.0
+    },
+    {
+        "client_email": "ovidebnath63@gmail.com [Paid Trx: wddefrt]",
+        "url": "derd",
+        "baseline_price": 5500.0
     }
 ]
