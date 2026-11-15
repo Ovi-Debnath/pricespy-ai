@@ -398,7 +398,7 @@ with tab2:
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
     
     if market == "Global (International)":
-        st.markdown("### 🌍 Global Plan ($49/month)")
+        st.markdown("### 🌍 Global Plan ($10/month)")
         st.markdown("Secured via Lemon Squeezy (Accepts Credit Cards, PayPal, Apple Pay worldwide).")
         
         lemonsqueezy_url = "https://yourstore.lemonsqueezy.com/buy/your-product-id"
