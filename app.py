@@ -49,47 +49,64 @@ def extract_valid_price(text):
             continue
     return None
 
-# 2. Advanced Robust Scraper with Safe Price Extraction
+# 2. Advanced Daraz-Compatible Scraper with Mobile UA & Meta/JSON Extraction
 def get_competitor_data(url):
     try:
-        # Clean URL whitespace or accidental quotes
         clean_url = str(url).strip().strip("'").strip('"')
         
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True
-            }
-        )
+        # মোবাইল ব্রাউজার এমুলেট করা (দারাজের মোবাইল সাইট স্ক্রেপ করার জন্য বেশি উপযোগী)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
         
-        response = scraper.get(clean_url, timeout=25)
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(clean_url, headers=headers, timeout=25)
+        
         if response.status_code != 200:
             raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. Product Title finding logic
-        title_tag = (
-            soup.find('span', {'class': 'pdp-mod-product-badge-title'}) or 
-            soup.find('h1', {'class': 'pdp-mod-product-title'}) or
-            soup.find('h1') or
-            soup.find('title')
-        )
-        title = title_tag.text.strip() if title_tag else "E-commerce Product"
+        # ১. প্রোডাক্ট টাইটেল খোঁজা (Meta og:title সবচেয়ে নির্ভরযোগ্য)
+        title = "E-commerce Product"
+        og_title = soup.find('meta', property='og:title')
+        if og_title and og_title.get('content'):
+            title = og_title.get('content').strip()
+        else:
+            title_tag = soup.find('h1') or soup.find('title')
+            if title_tag:
+                title = title_tag.text.strip()
         
-        # 2. Safe Price Extraction
+        # ২. প্রাইস এক্সট্রাকশন (Daraz & General E-commerce)
         price_val = None
         
-        meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', itemprop='price')
-        if meta_price:
+        # মেটা ট্যাগ চেক করা
+        meta_price = (
+            soup.find('meta', property='product:price:amount') or 
+            soup.find('meta', property='og:price:amount') or 
+            soup.find('meta', itemprop='price')
+        )
+        if meta_price and meta_price.get('content'):
             price_val = extract_valid_price(meta_price.get('content'))
             
+        # স্ক্রিপ্ট ট্যাগের ভেতর JSON ডেটা থেকে প্রাইস খোঁজা (Daraz-এর প্রধান পদ্ধতি)
         if not price_val:
-            json_price_match = re.search(r'"price"\s*:\s*"([0-9\.]+)"', response.text)
-            if json_price_match:
-                price_val = extract_valid_price(json_price_match.group(1))
-                
+            for script in soup.find_all('script'):
+                script_text = script.string or ""
+                if "price" in script_text.lower():
+                    matches = re.findall(r'"(?:price|salePrice|actPrice|originPrice)"\s*:\s*"([0-9\.]+)"', script_text)
+                    if matches:
+                        for m in matches:
+                            val = extract_valid_price(m)
+                            if val and val > 10:
+                                price_val = val
+                                break
+                if price_val:
+                    break
+                    
+        # ক্লাস বা সাধারণ ট্যাগ থেকে খোঁজা
         if not price_val:
             possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
             for tag in possible_tags:
@@ -98,7 +115,7 @@ def get_competitor_data(url):
                     break
                     
         if not price_val:
-            raise Exception("Could not locate a valid price element on this page structure.")
+            raise Exception("Could not locate a valid price element. Daraz blocks direct HTML scraping for this item.")
             
         return title, float(price_val)
         
@@ -254,9 +271,9 @@ with tab1:
     st.subheader("Run Instant Competitor Analysis")
     target_url = st.text_input(
         "Competitor Product URL", 
-        value="http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
+        value="https://www.daraz.com.bd/"
     )
-    user_baseline = st.number_input("Your Store's Baseline Price ($ USD)", min_value=0.0, value=55.00, step=1.0)
+    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=5500.0, step=100.0)
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
         with st.spinner("Scraping competitor and consulting Gemini AI..."):
@@ -265,7 +282,7 @@ with tab1:
                 
                 col1, col2 = st.columns(2)
                 col1.metric("Product Title", title)
-                col2.metric("Competitor Live Price", f"${live_price:.2f}", delta=f"${live_price - user_baseline:.2f} vs Baseline")
+                col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline")
                 
                 st.markdown("---")
                 st.subheader("🤖 AI Counter-Strategy")
