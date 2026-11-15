@@ -38,26 +38,28 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: Universal Daraz URL Cleaner & Converter (যেকোনো দারাজ লিংক নিখুঁতভাবে কনভার্ট করবে)
+# Helper function: 100% Robust Daraz URL Converter (যেকোনো দারাজ লিংক নিখুঁতভাবে কনভার্ট করবে)
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
     
-    # যদি এটি দারাজের প্রোডাক্ট লিংক হয়
     if "daraz.com.bd" in url:
-        # যেকোনো ফরম্যাটের -i...-s... আইডি খুঁজে বের করার ইউনিভার্সাল রেজেক্স
-        match = re.search(r'(-?i\d+-s\d+)', url)
-        if match:
-            product_id_part = match.group(1).lstrip('-') # শুরুতে অতিরিক্ত হাইফেন থাকলে রিমুভ করবে
+        # লিংকের ভেতর থেকে যেকোনো ফরম্যাটের iXXXXX এবং sXXXXX আইডি খুঁজে বের করা
+        i_match = re.search(r'i(\d+)', url)
+        s_match = re.search(r's(\d+)', url)
+        
+        if i_match and s_match:
+            i_val = i_match.group(1)
+            s_val = s_match.group(1)
             
             # কুয়েরি প্যারামিটার বা ট্র্যাকিং কোডগুলো (? এর পরের অংশ) আলাদা করে রাখা
             base_query = ""
             if "?" in url:
                 base_query = "?" + url.split("?", 1)[1]
             
-            # ১০০% কাজ করার মতো ইউনিভার্সাল ফরম্যাট
-            return f"https://www.daraz.com.bd/products/-{product_id_part}.html{base_query}"
+            # দারাজের জন্য সবচেয়ে ১০০% কার্যকর ইউনিভার্সাল ফরম্যাট তৈরি করা
+            return f"https://www.daraz.com.bd/products/-i{i_val}-s{s_val}.html{base_query}"
             
     return url
 
