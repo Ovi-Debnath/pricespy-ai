@@ -38,14 +38,11 @@ client = genai.Client(api_key=api_key)
 def extract_valid_price(text):
     if not text:
         return None
-    # কমা রিমুভ করা
     text = str(text).replace(',', '')
-    # সঠিক সংখ্যা ও দশমিক খোঁজা (যেমন: 1550 বা 1550.00)
     matches = re.findall(r'\b\d+(?:\.\d{1,2})?\b', text)
     for m in matches:
         try:
             val = float(m)
-            # বাস্তবসম্মত প্রাইস রেঞ্জ ফিল্টার (খুব ছোট বা জগাখিচুড়ি নম্বর বাদ দিতে)
             if 10 <= val <= 10000000:
                 return val
         except ValueError:
@@ -55,6 +52,9 @@ def extract_valid_price(text):
 # 2. Advanced Robust Scraper with Safe Price Extraction
 def get_competitor_data(url):
     try:
+        # Clean URL whitespace or accidental quotes
+        clean_url = str(url).strip().strip("'").strip('"')
+        
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -63,13 +63,13 @@ def get_competitor_data(url):
             }
         )
         
-        response = scraper.get(url, timeout=25)
+        response = scraper.get(clean_url, timeout=25)
         if response.status_code != 200:
             raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # ১. প্রোডাক্ট টাইটেল খোঁজা
+        # 1. Product Title finding logic
         title_tag = (
             soup.find('span', {'class': 'pdp-mod-product-badge-title'}) or 
             soup.find('h1', {'class': 'pdp-mod-product-title'}) or
@@ -78,21 +78,18 @@ def get_competitor_data(url):
         )
         title = title_tag.text.strip() if title_tag else "E-commerce Product"
         
-        # ২. নিরাপদ ও ধাপে ধাপে প্রাইস এক্সট্রাকশন
+        # 2. Safe Price Extraction
         price_val = None
         
-        # মেটা ট্যাগ থেকে খোঁজা
         meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', itemprop='price')
         if meta_price:
             price_val = extract_valid_price(meta_price.get('content'))
             
-        # JSON পে-লোড বা স্ক্রিপ্ট থেকে খোঁজা
         if not price_val:
             json_price_match = re.search(r'"price"\s*:\s*"([0-9\.]+)"', response.text)
             if json_price_match:
                 price_val = extract_valid_price(json_price_match.group(1))
                 
-        # সম্ভাব্য প্রাইস ক্লাস থেকে খোঁজা
         if not price_val:
             possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
             for tag in possible_tags:
@@ -257,9 +254,9 @@ with tab1:
     st.subheader("Run Instant Competitor Analysis")
     target_url = st.text_input(
         "Competitor Product URL", 
-        value="https://www.daraz.com.bd/"
+        value="http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
     )
-    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=5500.0, step=100.0)
+    user_baseline = st.number_input("Your Store's Baseline Price ($ USD)", min_value=0.0, value=55.00, step=1.0)
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
         with st.spinner("Scraping competitor and consulting Gemini AI..."):
@@ -268,7 +265,7 @@ with tab1:
                 
                 col1, col2 = st.columns(2)
                 col1.metric("Product Title", title)
-                col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline")
+                col2.metric("Competitor Live Price", f"${live_price:.2f}", delta=f"${live_price - user_baseline:.2f} vs Baseline")
                 
                 st.markdown("---")
                 st.subheader("🤖 AI Counter-Strategy")
