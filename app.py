@@ -38,23 +38,26 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: Daraz URL Cleaner & Converter (বড় লিংক বা নামযুক্ত লিংক ছোট ও নিখুঁত করে নেবে)
+# Helper function: Daraz URL Converter (নাম রিমুভ করে সরাসরি -i...-s... ফরম্যাটে রূপান্তর করবে)
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
-    # যদি এটি দারাজের প্রোডাক্ট লিংক হয় এবং ভেতরে -i...-s... থাকে
+    
+    # যদি এটি দারাজের প্রোডাক্ট লিংক হয় এবং ভেতরে -i...-s... থাকে
     if "daraz.com.bd/products/" in url:
         match = re.search(r'(-i\d+-s\d+)', url)
         if match:
             product_id_part = match.group(1)
-            # কুয়েরি প্যারামিটারগুলো (যেমন ?scm=...) আলাদা করে রাখা
+            
+            # কুয়েরি প্যারামিটার বা ট্র্যাকিং কোডগুলো (? এর পরের অংশ) আলাদা করে রাখা
             base_query = ""
             if "?" in url:
                 base_query = "?" + url.split("?", 1)[1]
             
-            # নিখুঁত ছোট লিংক তৈরি করা (যেমন: https://www.daraz.com.bd/products/-i323506437-s1541203283.html?...)
+            # আপনার কাঙ্ক্ষিত ফরম্যাট: https://www.daraz.com.bd/products/-i323506437-s1541203283.html?scm=...
             return f"https://www.daraz.com.bd/products/{product_id_part}.html{base_query}"
+            
     return url
 
 # Helper function to safely parse and validate price numbers
@@ -177,7 +180,6 @@ def _fetch_via_reader(clean_url):
 
 def get_competitor_data(url):
     try:
-        # লিংক পাওয়ার সাথে সাথেই কনভার্টার দিয়ে সেটিকে ক্লিন ও অপ্টিমাইজ করে নেওয়া
         clean_url = clean_daraz_url(url)
         
         headers = {
@@ -378,7 +380,6 @@ def send_activation_email(to_email, verified_items_list):
 
 # Save new client function with auto URL cleaning
 def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
-    # সেভ করার আগেই প্রতিটি লিংকের জন্য ইউআরএল কনভার্টার চালিয়ে ক্লিন করে নেওয়া
     cleaned_items = []
     for item in product_items:
         cleaned_url = clean_daraz_url(item.get('url'))
@@ -577,14 +578,12 @@ with tab3:
                 
                 col_a, col_b = st.columns(2)
                 
-                # Approve button with auto URL cleaning & live testing
                 if not client.get("approved", True):
                     if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
                         with st.spinner("Cleaning URLs, testing live prices before approval..."):
                             verified_list = []
                             link_error = None
                             
-                            # ভেরিফাই করার সময়ও লিংক ক্লিন করে নেওয়া
                             cleaned_products = []
                             for p_item in products:
                                 raw_u = p_item.get('url')
