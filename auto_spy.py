@@ -53,6 +53,9 @@ def get_ai_strategy(product_name, old_usd, new_usd):
     return "Competitor price changed. Review your store pricing manually."
 
 def send_alert_email(to_email, product_name, old_usd, new_usd, strategy, url):
+    # Clean email address before sending (removes "[Paid Trx: ...]" tag if present)
+    clean_to_email = to_email.split(" [")[0].strip()
+
     subject = f"🚨 Price Alert: {product_name} is now ${new_usd:.2f}"
     body = (
         f"Competitor Price Shift Detected!\n\n"
@@ -68,12 +71,12 @@ def send_alert_email(to_email, product_name, old_usd, new_usd, strategy, url):
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
-    msg["To"] = to_email
+    msg["To"] = clean_to_email
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.send_message(msg)
-    print(f"Alert email sent to {to_email}!")
+    print(f"Alert email sent to {clean_to_email}!")
 
 def run_automation():
     clients = load_clients()
