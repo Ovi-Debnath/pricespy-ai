@@ -3,6 +3,8 @@ import json
 import time
 import base64
 import re
+import hmac
+import html as html_lib
 import smtplib
 from email.mime.text import MIMEText
 import streamlit as st
@@ -27,6 +29,7 @@ github_token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 sender_email = st.secrets.get("SENDER_EMAIL") or os.environ.get("SENDER_EMAIL")
 sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PASSWORD")
+admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD")
 
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
@@ -35,11 +38,19 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 # Helper function to safely parse and validate price numbers
-def extract_valid_price(text):
+# FIX: এখন 650ml, 2kg, 23% এর মতো ইউনিটসহ সংখ্যাকে প্রাইস হিসেবে ধরবে না
+UNIT_PATTERN = r'(?!\s*(?:ml|ltr|lt|l|gm|g|kg|mg|pcs|pc|cm|mm|inch|oz|watt|w|v|mah|gb|tb|%))'
+
+def extract_valid_price(text, require_currency=False):
     if not text:
         return None
-    text = str(text).replace(',', '')
-    matches = re.findall(r'\b\d+(?:\.\d{1,2})?\b', text)
+    text = html_lib.unescape(str(text)).replace(',', '')
+    if require_currency:
+        # শুধু ৳ / Tk / BDT এর পরে থাকা সংখ্যা
+        pattern = r'(?:৳|Tk\.?|BDT)\s*(\d+(?:\.\d{1,2})?)' + UNIT_PATTERN
+    else:
+        pattern = r'(?<![\w.])(\d+(?:\.\d{1,2})?)(?![\w.])' + UNIT_PATTERN
+    matches = re.findall(pattern, text, flags=re.IGNORECASE)
     for m in matches:
         try:
             val = float(m)
@@ -47,6 +58,39 @@ def extract_valid_price(text):
                 return val
         except ValueError:
             continue
+    return None
+
+# FIX: JSON-LD (schema.org) থেকে প্রাইস খোঁজার হেল্পার
+def _find_price_in_jsonld(soup):
+    def walk(node):
+        if isinstance(node, dict):
+            offers = node.get("offers")
+            if offers:
+                for o in (offers if isinstance(offers, list) else [offers]):
+                    if isinstance(o, dict):
+                        for key in ("price", "lowPrice"):
+                            v = extract_valid_price(o.get(key))
+                            if v:
+                                return v
+            for v in node.values():
+                r = walk(v)
+                if r:
+                    return r
+        elif isinstance(node, list):
+            for v in node:
+                r = walk(v)
+                if r:
+                    return r
+        return None
+
+    for s in soup.find_all('script', type='application/ld+json'):
+        try:
+            data = json.loads(s.string or "")
+        except Exception:
+            continue
+        r = walk(data)
+        if r:
+            return r
     return None
 
 # 2. Advanced Daraz & General E-commerce Scraper with API Fallback & JSON Unquoted Parser
@@ -82,46 +126,56 @@ def get_competitor_data(url):
         # প্রাইস এক্সট্রাকশন
         price_val = None
         
-        # মেটা ট্যাগ চেক করা
-        meta_price = (
-            soup.find('meta', property='product:price:amount') or 
-            soup.find('meta', property='og:price:amount') or 
-            soup.find('meta', itemprop='price')
-        )
-        if meta_price and meta_price.get('content'):
-            price_val = extract_valid_price(meta_price.get('content'))
-            
-        # স্ক্রিপ্ট ট্যাগ থেকে JSON ডেটা খোঁজা (কোটেড ও আনকোটেড সাপোর্ট)
+        # ১) JSON-LD structured data (সবচেয়ে নির্ভরযোগ্য)
+        price_val = _find_price_in_jsonld(soup)
+        
+        # ২) মেটা ট্যাগ চেক করা
         if not price_val:
+            meta_price = (
+                soup.find('meta', property='product:price:amount') or 
+                soup.find('meta', property='og:price:amount') or 
+                soup.find('meta', itemprop='price')
+            )
+            if meta_price and meta_price.get('content'):
+                price_val = extract_valid_price(meta_price.get('content'))
+        
+        # ৩) পেজের বর্তমান সেল প্রাইস (কাটা/পুরনো দাম deleted ক্লাস স্কিপ করা হয়)
+        if not price_val:
+            for tag in soup.find_all(['span', 'div'], class_=True):
+                cls = " ".join(tag.get('class', [])).lower()
+                if 'deleted' in cls:
+                    continue
+                if 'pdp-price_type_normal' in cls or 'pdp-product-price' in cls:
+                    price_val = (
+                        extract_valid_price(tag.get_text(), require_currency=True)
+                        or extract_valid_price(tag.get_text())
+                    )
+                    if price_val:
+                        break
+        
+        # ৪) স্ক্রিপ্ট ট্যাগ থেকে JSON ডেটা (originPrice/originalPrice বাদ, salePrice আগে)
+        if not price_val:
+            key_pattern = (
+                r'"(?:salePrice|actPrice|minActionPrice|price)"\s*:\s*'
+                r'(?:\{[^{}]*?"(?:value|text)"\s*:\s*)?"?(?:৳\s*)?(\d[\d,]*\.?\d*)'
+            )
             for script in soup.find_all('script'):
                 script_text = script.string or ""
-                if any(kw in script_text for kw in ["price", "salePrice", "actPrice", "originPrice", "minActionPrice"]):
-                    matches = re.findall(r'"(?:price|salePrice|actPrice|originPrice|minActionPrice|originalPrice)"\s*:\s*"?([0-9\.]+)"?', script_text)
-                    if matches:
-                        for m in matches:
-                            val = extract_valid_price(m)
-                            if val and val > 5:
-                                price_val = val
-                                break
+                if "rice" not in script_text:
+                    continue
+                for m in re.findall(key_pattern, script_text):
+                    val = extract_valid_price(m)
+                    if val:
+                        price_val = val
+                        break
                 if price_val:
                     break
-                    
-        # ক্লাস বা সাধারণ ট্যাগ থেকে খোঁজা
+        
+        # ৫) শেষ উপায়: শুধু ৳ / Tk / BDT চিহ্নযুক্ত সংখ্যা (টাইটেল/স্ক্রিপ্ট বাদ দিয়ে)
         if not price_val:
-            possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate', 'pdp-product-price']))
-            for tag in possible_tags:
-                price_val = extract_valid_price(tag.get_text())
-                if price_val:
-                    break
-                    
-        # ফুল পেজ টেক্সট থেকে কারেন্সি প্যাটার্ন খোঁজা
-        if not price_val:
-            text_matches = re.findall(r'(?:৳|BDT|Tk)?\s*([0-9]{2,6}(?:\.\d{1,2})?)', soup.get_text())
-            for tm in text_matches:
-                val = extract_valid_price(tm)
-                if val and 20 <= val <= 500000:
-                    price_val = val
-                    break
+            for bad in soup.find_all(['title', 'h1', 'script', 'style', 'noscript']):
+                bad.decompose()
+            price_val = extract_valid_price(soup.get_text(" "), require_currency=True)
                     
         if not price_val:
             raise Exception("Could not locate a valid price element. Daraz security blocked direct extraction for this specific product.")
@@ -367,7 +421,9 @@ with tab3:
     
     admin_pass = st.text_input("Admin Password", type="password")
     
-    if admin_pass == "9973":
+    if not admin_password:
+        st.error("⚠️ ADMIN_PASSWORD is not configured! Please add it in Streamlit Secrets.")
+    elif admin_pass and hmac.compare_digest(admin_pass.encode("utf-8"), str(admin_password).encode("utf-8")):
         st.success("Access Granted!")
         
         try:
