@@ -34,25 +34,5 @@
         "plan": "Growth (5 URLs)",
         "approved": false,
         "trx_id": "111"
-    },
-    {
-        "client_email": "ovidebnath63@gmail.com [Paid Trx: 111]",
-        "products": [
-            {
-                "url": "https://www.daraz.com.bd/products/-i565767832-s2607180062.html?scm=1007.51610.379274.0&pvid=bfb54b10-fbfa-4ba1-993f-a0dee2eb8bc0&search=flashsale&spm=a2a0e.tm80335411.FlashSale.d_565767832",
-                "baseline_price": 500.0
-            },
-            {
-                "url": "https://www.daraz.com.bd/products/-i1587890704-s12703537379.html?scm=1007.51610.379274.0&pvid=bfb54b10-fbfa-4ba1-993f-a0dee2eb8bc0&search=flashsale&spm=a2a0e.tm80335411.FlashSale.d_1587890704",
-                "baseline_price": 500.0
-            },
-            {
-                "url": "https://www.daraz.com.bd/products/usb-operated-mist-maker-humidifier-aromatherapy-diffuser-300-ml-large-tank-with-double-lighting-i323506437-s1541203283.html?scm=1007.51610.379274.0&pvid=3638418b-2433-47b8-aee2-c27e4ff11b4a&search=flashsale&spm=a2a0e.tm80335411.FlashSale.d_323506437",
-                "baseline_price": 0.0
-            }
-        ],
-        "plan": "Growth (5 URLs)",
-        "approved": false,
-        "trx_id": "111"
     }
 ]
