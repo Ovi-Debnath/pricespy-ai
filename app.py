@@ -43,22 +43,22 @@ def extract_valid_price(text):
     for m in matches:
         try:
             val = float(m)
-            if 10 <= val <= 10000000:
+            if 5 <= val <= 10000000:
                 return val
         except ValueError:
             continue
     return None
 
-# 2. Advanced Daraz-Compatible Scraper with Mobile UA & Meta/JSON Extraction
+# 2. Advanced Daraz & General E-commerce Scraper with API Fallback & JSON Unquoted Parser
 def get_competitor_data(url):
     try:
         clean_url = str(url).strip().strip("'").strip('"')
         
-        # মোবাইল ব্রাউজার এমুলেট করা (দারাজের মোবাইল সাইট স্ক্রেপ করার জন্য বেশি উপযোগী)
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.daraz.com.bd/"
         }
         
         scraper = cloudscraper.create_scraper()
@@ -69,7 +69,7 @@ def get_competitor_data(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # ১. প্রোডাক্ট টাইটেল খোঁজা (Meta og:title সবচেয়ে নির্ভরযোগ্য)
+        # প্রোডাক্ট টাইটেল খোঁজা
         title = "E-commerce Product"
         og_title = soup.find('meta', property='og:title')
         if og_title and og_title.get('content'):
@@ -79,7 +79,7 @@ def get_competitor_data(url):
             if title_tag:
                 title = title_tag.text.strip()
         
-        # ২. প্রাইস এক্সট্রাকশন (Daraz & General E-commerce)
+        # প্রাইস এক্সট্রাকশন
         price_val = None
         
         # মেটা ট্যাগ চেক করা
@@ -91,16 +91,16 @@ def get_competitor_data(url):
         if meta_price and meta_price.get('content'):
             price_val = extract_valid_price(meta_price.get('content'))
             
-        # স্ক্রিপ্ট ট্যাগের ভেতর JSON ডেটা থেকে প্রাইস খোঁজা (Daraz-এর প্রধান পদ্ধতি)
+        # স্ক্রিপ্ট ট্যাগ থেকে JSON ডেটা খোঁজা (কোটেড ও আনকোটেড সাপোর্ট)
         if not price_val:
             for script in soup.find_all('script'):
                 script_text = script.string or ""
-                if "price" in script_text.lower():
-                    matches = re.findall(r'"(?:price|salePrice|actPrice|originPrice)"\s*:\s*"([0-9\.]+)"', script_text)
+                if any(kw in script_text for kw in ["price", "salePrice", "actPrice", "originPrice", "minActionPrice"]):
+                    matches = re.findall(r'"(?:price|salePrice|actPrice|originPrice|minActionPrice|originalPrice)"\s*:\s*"?([0-9\.]+)"?', script_text)
                     if matches:
                         for m in matches:
                             val = extract_valid_price(m)
-                            if val and val > 10:
+                            if val and val > 5:
                                 price_val = val
                                 break
                 if price_val:
@@ -108,14 +108,23 @@ def get_competitor_data(url):
                     
         # ক্লাস বা সাধারণ ট্যাগ থেকে খোঁজা
         if not price_val:
-            possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
+            possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate', 'pdp-product-price']))
             for tag in possible_tags:
                 price_val = extract_valid_price(tag.get_text())
                 if price_val:
                     break
                     
+        # ফুল পেজ টেক্সট থেকে কারেন্সি প্যাটার্ন খোঁজা
         if not price_val:
-            raise Exception("Could not locate a valid price element. Daraz blocks direct HTML scraping for this item.")
+            text_matches = re.findall(r'(?:৳|BDT|Tk)?\s*([0-9]{2,6}(?:\.\d{1,2})?)', soup.get_text())
+            for tm in text_matches:
+                val = extract_valid_price(tm)
+                if val and 20 <= val <= 500000:
+                    price_val = val
+                    break
+                    
+        if not price_val:
+            raise Exception("Could not locate a valid price element. Daraz security blocked direct extraction for this specific product.")
             
         return title, float(price_val)
         
@@ -271,9 +280,9 @@ with tab1:
     st.subheader("Run Instant Competitor Analysis")
     target_url = st.text_input(
         "Competitor Product URL", 
-        value="https://www.daraz.com.bd/"
+        value="https://www.daraz.com.bd/products/rfl-ss-650ml-623363-1-i428888927-s2083130727.html"
     )
-    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=5500.0, step=100.0)
+    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=450.0, step=10.0)
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
         with st.spinner("Scraping competitor and consulting Gemini AI..."):
