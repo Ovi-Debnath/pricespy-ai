@@ -2,6 +2,8 @@ import os
 import json
 import time
 import base64
+import smtplib
+from email.mime.text import MIMEText
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -17,10 +19,12 @@ st.set_page_config(
 st.title("🕵️‍♂️ PriceSpy AI: Automated B2B Competitor Price Monitor")
 st.markdown("Monitor your competitors 24/7 and get AI-driven counter-strategy alerts instantly.")
 
-# 1. API & GitHub Configuration
+# 1. API & GitHub & Email Configuration
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 github_token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
+sender_email = st.secrets.get("SENDER_EMAIL") or os.environ.get("SENDER_EMAIL")
+sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PASSWORD")
 
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
@@ -85,7 +89,7 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
             
     return "• Review pricing manually.\n• Monitor competitor stock levels.\n• Maintain value proposition."
 
-# 4. Helper function to load clients (Fetches fresh from GitHub if token is available)
+# 4. Helper function to load clients
 def load_clients_data():
     if github_token and github_repo:
         api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
@@ -102,22 +106,19 @@ def load_clients_data():
         except Exception:
             pass
 
-    # Fallback to local file
     file_path = "clients.json"
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
             return json.load(f)
     return []
 
-# 5. Helper function to save/update the entire clients list back to GitHub & local
+# 5. Helper function to save clients to GitHub & local
 def update_github_clients_file(clients_list, commit_message="Update clients.json"):
     updated_content = json.dumps(clients_list, indent=4)
     
-    # Save locally first
     with open("clients.json", "w") as f:
         f.write(updated_content)
 
-    # Push to GitHub if configured
     if github_token and github_repo:
         api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
         headers = {
@@ -144,6 +145,34 @@ def update_github_clients_file(clients_list, commit_message="Update clients.json
         except Exception as e:
             return str(e)
     return True
+
+# 6. Function to send Activation Email
+def send_activation_email(to_email, product_url):
+    clean_email = to_email.split(" [")[0].strip()
+    if not sender_email or not sender_password:
+        return False, "Sender email or password credentials missing in secrets."
+    
+    subject = "🚀 Your PriceSpy AI Monitoring is Now Active!"
+    body = (
+        f"Hello,\n\n"
+        f"Your payment has been successfully verified and your 24/7 competitor price monitoring bot is now LIVE!\n"
+        f"Tracked URL: {product_url}\n\n"
+        f"Our bot will check the competitor price every 6 hours and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
+        f"Thank you for using PriceSpy AI!"
+    )
+    
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = clean_email
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        return True, "Email sent successfully"
+    except Exception as e:
+        return False, str(e)
 
 # Save new client function
 def save_client_to_github(email, product_url, baseline, is_local=False, trx_id=""):
@@ -274,13 +303,21 @@ with tab3:
                 
                 col_a, col_b = st.columns(2)
                 
-                # Approve button
+                # Approve button with instant email notification
                 if not client.get("approved", True):
                     if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
                         clients_data[i]["approved"] = True
+                        
+                        # Save to GitHub & Local
                         res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
+                        
                         if res is True:
-                            st.success(f"Client #{i+1} approved and saved successfully!")
+                            # Send Instant Activation Email
+                            mail_sent, mail_msg = send_activation_email(client['client_email'], client['url'])
+                            if mail_sent:
+                                st.success(f"Client #{i+1} approved and activation email sent successfully!")
+                            else:
+                                st.warning(f"Client approved and saved, but email failed: {mail_msg}")
                             st.rerun()
                         else:
                             st.error(f"Failed to sync with GitHub: {res}")
