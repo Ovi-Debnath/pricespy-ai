@@ -405,7 +405,7 @@ with tab2:
         st.markdown(f"""
             <a href="{lemonsqueezy_url}" target="_blank">
                 <button style="background-color: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
-                    Pay $49/mo via Lemon Squeezy 💳
+                    Pay $10/mo via Lemon Squeezy 💳
                 </button>
             </a>
         """, unsafe_allow_html=True)
@@ -443,7 +443,7 @@ with tab2:
             local_email = st.text_input("Your Email (for receiving alerts)")
             local_url = st.text_input("Competitor Product URL to Track", placeholder="Paste competitor product URL here...")
             local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
-            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
+            trx_id = st.text_input("bKash / Nagad / Upay / Rocket Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
                 if local_email and local_url and trx_id:
