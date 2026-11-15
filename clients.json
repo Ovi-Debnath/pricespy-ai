@@ -8,7 +8,7 @@
         "client_email": "ovidebnath63@gmail.com [Paid Trx: 123]",
         "url": "aaa",
         "baseline_price": 5500.0,
-        "approved": false,
+        "approved": true,
         "trx_id": "123"
     }
 ]
