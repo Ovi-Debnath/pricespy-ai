@@ -5,12 +5,5 @@
         "baseline_price": 5500.0,
         "approved": true,
         "trx_id": "123"
-    },
-    {
-        "client_email": "ovidebnath63@gmail.com [Paid Trx: a]",
-        "url": "a",
-        "baseline_price": 5500.0,
-        "approved": false,
-        "trx_id": "a"
     }
 ]
