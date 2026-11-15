@@ -187,3 +187,46 @@ with tab2:
                 <button style="background-color: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
                     Pay $49/mo via Lemon Squeezy 💳
                 </button>
+            </a>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        with st.form("global_client_form"):
+            email = st.text_input("Your Email (used in checkout)")
+            url = st.text_input("Competitor URL to Track")
+            baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=55.00)
+            
+            if st.form_submit_button("Activate Global Bot", use_container_width=True):
+                if email and url:
+                    with st.spinner("Activating 24/7 monitoring..."):
+                        res = save_client_to_github(email, url, baseline)
+                        if res is True:
+                            st.success(f"✅ Global monitoring active for {email}!")
+                        else:
+                            st.error(f"Error: {res}")
+                else:
+                    st.warning("Please fill in all fields.")
+
+    else:
+        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
+        st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
+        
+        st.info("📌 Send Money to: **01735943876** (bKash / Nagad Personal)")
+        
+        with st.form("local_client_form"):
+            local_email = st.text_input("Your Email (for receiving alerts)")
+            local_url = st.text_input("Competitor Product URL to Track")
+            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=5500.0, step=100.0)
+            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
+            
+            if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
+                if local_email and local_url and trx_id:
+                    with st.spinner("Submitting payment and activating bot..."):
+                        formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
+                        res = save_client_to_github(formatted_email, local_url, local_baseline)
+                        if res is True:
+                            st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
+                        else:
+                            st.error(f"Error: {res}")
+                else:
+                    st.warning("Please fill in all required fields including the Transaction ID.")
