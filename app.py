@@ -30,6 +30,7 @@ github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 sender_email = st.secrets.get("SENDER_EMAIL") or os.environ.get("SENDER_EMAIL")
 sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PASSWORD")
 admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD")
+payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
@@ -447,7 +448,13 @@ with tab2:
         st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
         st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
         
-        st.info("📌 Send Money to: **01735943876** (bKash / Nagad / Upay / Rocket Personal)")
+        if payment_number:
+            if st.button("📲 Show Payment Number"):
+                st.session_state["show_pay_number"] = True
+            if st.session_state.get("show_pay_number"):
+                st.info(f"📌 Send Money to: **{payment_number}** (bKash / Nagad / Upay / Rocket Personal)")
+        else:
+            st.warning("Payment number is not configured yet. Please contact support.")
         
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
