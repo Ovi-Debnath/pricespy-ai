@@ -8,7 +8,7 @@
         ],
         "baseline_price": 500.0,
         "plan": "Growth (5 URLs)",
-        "approved": false,
+        "approved": true,
         "trx_id": "111"
     }
 ]
