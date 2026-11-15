@@ -94,94 +94,146 @@ def _find_price_in_jsonld(soup):
     return None
 
 # 2. Advanced Daraz & General E-commerce Scraper with API Fallback & JSON Unquoted Parser
+def _parse_html_for_price(html_text):
+    """HTML থেকে বর্তমান সেল প্রাইস বের করে। না পেলে None ফেরত দেয়।"""
+    soup = BeautifulSoup(html_text, 'html.parser')
+
+    # ১) JSON-LD structured data (সবচেয়ে নির্ভরযোগ্য)
+    price_val = _find_price_in_jsonld(soup)
+
+    # ২) মেটা ট্যাগ চেক করা
+    if not price_val:
+        meta_price = (
+            soup.find('meta', property='product:price:amount') or
+            soup.find('meta', property='og:price:amount') or
+            soup.find('meta', itemprop='price')
+        )
+        if meta_price and meta_price.get('content'):
+            price_val = extract_valid_price(meta_price.get('content'))
+
+    # ৩) পেজের বর্তমান সেল প্রাইস (কাটা/পুরনো দাম deleted ক্লাস স্কিপ করা হয়)
+    if not price_val:
+        for tag in soup.find_all(['span', 'div'], class_=True):
+            cls = " ".join(tag.get('class', [])).lower()
+            if 'deleted' in cls:
+                continue
+            if 'pdp-price_type_normal' in cls or 'pdp-product-price' in cls:
+                price_val = (
+                    extract_valid_price(tag.get_text(), require_currency=True)
+                    or extract_valid_price(tag.get_text())
+                )
+                if price_val:
+                    break
+
+    # ৪) পুরো raw HTML-এর ভেতরের JSON (escaped quote ও \u09f3 ঠিক করে নিয়ে)
+    #    originPrice/originalPrice বাদ, salePrice আগে
+    if not price_val:
+        raw = html_text.replace('\\"', '"').replace('\\u09f3', '৳').replace('\\u002F', '/')
+        key_pattern = (
+            r'"(?:salePrice|actPrice|minActionPrice|price)"\s*:\s*'
+            r'(?:\{[^{}]*?"(?:value|text)"\s*:\s*)?"?(?:৳\s*)?(\d[\d,]*\.?\d*)'
+        )
+        for m in re.findall(key_pattern, raw):
+            val = extract_valid_price(m)
+            if val:
+                price_val = val
+                break
+
+    # ৫) শেষ উপায়: শুধু ৳ / Tk / BDT চিহ্নযুক্ত সংখ্যা (টাইটেল/স্ক্রিপ্ট বাদ দিয়ে)
+    if not price_val:
+        for bad in soup.find_all(['title', 'h1', 'script', 'style', 'noscript']):
+            bad.decompose()
+        price_val = extract_valid_price(soup.get_text(" "), require_currency=True)
+
+    return price_val
+
+
+def _fetch_via_reader(clean_url):
+    """ফলব্যাক: Daraz সরাসরি ব্লক করলে রেন্ডার করা পেজ টেক্সট (r.jina.ai) থেকে প্রাইস নেয়।"""
+    r = requests.get(
+        "https://r.jina.ai/" + clean_url,
+        headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+        timeout=60
+    )
+    if r.status_code != 200:
+        raise Exception(f"Reader fallback failed (Status Code: {r.status_code})")
+
+    text = r.text
+
+    title = None
+    tm = re.search(r'^Title:\s*(.+)$', text, flags=re.MULTILINE)
+    if tm:
+        title = tm.group(1).replace("| Daraz.com.bd", "").strip()
+
+    # প্রোডাক্টের মূল হেডিং (# ...) এর পরের প্রথম ৳ সংখ্যাই বর্তমান সেল প্রাইস
+    hm = re.search(r'^# .+$', text, flags=re.MULTILINE)
+    search_area = text[hm.end():] if hm else text
+    price = extract_valid_price(search_area, require_currency=True)
+    return title, price
+
+
 def get_competitor_data(url):
     try:
         clean_url = str(url).strip().strip("'").strip('"')
-        
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Referer": "https://www.daraz.com.bd/"
         }
-        
-        scraper = cloudscraper.create_scraper()
-        response = scraper.get(clean_url, headers=headers, timeout=25)
-        
-        if response.status_code != 200:
-            raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # প্রোডাক্ট টাইটেল খোঁজা
+
         title = "E-commerce Product"
-        og_title = soup.find('meta', property='og:title')
-        if og_title and og_title.get('content'):
-            title = og_title.get('content').strip()
-        else:
-            title_tag = soup.find('h1') or soup.find('title')
-            if title_tag:
-                title = title_tag.text.strip()
-        
-        # প্রাইস এক্সট্রাকশন
         price_val = None
-        
-        # ১) JSON-LD structured data (সবচেয়ে নির্ভরযোগ্য)
-        price_val = _find_price_in_jsonld(soup)
-        
-        # ২) মেটা ট্যাগ চেক করা
+        direct_error = None
+
+        # --- ধাপ ১: সরাসরি স্ক্র্যাপ ---
+        try:
+            scraper = cloudscraper.create_scraper()
+            response = scraper.get(clean_url, headers=headers, timeout=25)
+
+            if response.status_code != 200:
+                raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
+
+            html_text = response.text
+            low = html_text.lower()
+            if "punish" in low or "captcha" in low or "x5secdata" in low:
+                raise Exception("Daraz returned a captcha / security page to the server")
+
+            soup = BeautifulSoup(html_text, 'html.parser')
+
+            # প্রোডাক্ট টাইটেল খোঁজা
+            og_title = soup.find('meta', property='og:title')
+            if og_title and og_title.get('content'):
+                title = og_title.get('content').strip()
+            else:
+                title_tag = soup.find('h1') or soup.find('title')
+                if title_tag:
+                    title = title_tag.text.strip()
+
+            price_val = _parse_html_for_price(html_text)
+            if not price_val:
+                raise Exception("No price found in the direct HTML")
+        except Exception as e:
+            direct_error = str(e)
+            price_val = None
+
+        # --- ধাপ ২: ফলব্যাক (ব্লক হলে) ---
         if not price_val:
-            meta_price = (
-                soup.find('meta', property='product:price:amount') or 
-                soup.find('meta', property='og:price:amount') or 
-                soup.find('meta', itemprop='price')
-            )
-            if meta_price and meta_price.get('content'):
-                price_val = extract_valid_price(meta_price.get('content'))
-        
-        # ৩) পেজের বর্তমান সেল প্রাইস (কাটা/পুরনো দাম deleted ক্লাস স্কিপ করা হয়)
+            try:
+                r_title, r_price = _fetch_via_reader(clean_url)
+                if r_price:
+                    price_val = r_price
+                    if r_title:
+                        title = r_title
+            except Exception as e2:
+                raise Exception(f"Direct: {direct_error} | Fallback: {e2}")
+
         if not price_val:
-            for tag in soup.find_all(['span', 'div'], class_=True):
-                cls = " ".join(tag.get('class', [])).lower()
-                if 'deleted' in cls:
-                    continue
-                if 'pdp-price_type_normal' in cls or 'pdp-product-price' in cls:
-                    price_val = (
-                        extract_valid_price(tag.get_text(), require_currency=True)
-                        or extract_valid_price(tag.get_text())
-                    )
-                    if price_val:
-                        break
-        
-        # ৪) স্ক্রিপ্ট ট্যাগ থেকে JSON ডেটা (originPrice/originalPrice বাদ, salePrice আগে)
-        if not price_val:
-            key_pattern = (
-                r'"(?:salePrice|actPrice|minActionPrice|price)"\s*:\s*'
-                r'(?:\{[^{}]*?"(?:value|text)"\s*:\s*)?"?(?:৳\s*)?(\d[\d,]*\.?\d*)'
-            )
-            for script in soup.find_all('script'):
-                script_text = script.string or ""
-                if "rice" not in script_text:
-                    continue
-                for m in re.findall(key_pattern, script_text):
-                    val = extract_valid_price(m)
-                    if val:
-                        price_val = val
-                        break
-                if price_val:
-                    break
-        
-        # ৫) শেষ উপায়: শুধু ৳ / Tk / BDT চিহ্নযুক্ত সংখ্যা (টাইটেল/স্ক্রিপ্ট বাদ দিয়ে)
-        if not price_val:
-            for bad in soup.find_all(['title', 'h1', 'script', 'style', 'noscript']):
-                bad.decompose()
-            price_val = extract_valid_price(soup.get_text(" "), require_currency=True)
-                    
-        if not price_val:
-            raise Exception("Could not locate a valid price element. Daraz security blocked direct extraction for this specific product.")
-            
+            raise Exception(f"Could not locate a valid price element. Direct: {direct_error}")
+
         return title, float(price_val)
-        
+
     except Exception as e:
         raise Exception(f"Failed to scrape URL. Details: {e}")
 
