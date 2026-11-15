@@ -10,5 +10,25 @@
         "plan": "Growth (5 URLs)",
         "approved": true,
         "trx_id": "111"
+    },
+    {
+        "client_email": "ovidebnath63@gmail.com [Paid Trx: 111]",
+        "products": [
+            {
+                "url": "aaaa",
+                "baseline_price": 45.0
+            },
+            {
+                "url": "ss",
+                "baseline_price": 0.0044
+            },
+            {
+                "url": "jj",
+                "baseline_price": 0.0
+            }
+        ],
+        "plan": "Growth (5 URLs)",
+        "approved": false,
+        "trx_id": "111"
     }
 ]
