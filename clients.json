@@ -6,13 +6,6 @@
     },
     {
         "client_email": "ovidebnath63@gmail.com [Paid Trx: 123]",
-        "url": "http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
-        "baseline_price": 5500.0,
-        "approved": true,
-        "trx_id": "123"
-    },
-    {
-        "client_email": "ovidebnath63@gmail.com [Paid Trx: 123]",
         "url": "aaaa",
         "baseline_price": 5500.0,
         "approved": false,
