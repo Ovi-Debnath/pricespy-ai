@@ -7,6 +7,7 @@ import smtplib
 from email.mime.text import MIMEText
 import streamlit as st
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 from google import genai
 
@@ -33,34 +34,36 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Smart Function to fetch live competitor price (Updated with anti-blocking headers & fallbacks)
+# 2. Smart Function to fetch live competitor price using Cloudscraper (Bypasses Daraz/Cloudflare bot protection)
 def get_competitor_data(url):
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-        "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0"
-    ]
-    
-    headers = {
-        "User-Agent": random.choice(user_agents),
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
-    }
-    
     try:
-        response = requests.get(url, headers=headers, timeout=20)
+        # Create a cloudscraper instance that mimics a real desktop browser
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
+        
+        response = scraper.get(url, timeout=25)
         if response.status_code != 200:
             raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Product Title finding logic
-        title_tag = soup.find('h1') or soup.find('span', {'class': 'pdp-mod-product-badge-title'})
+        # Product Title finding logic (Daraz & standard e-commerce support)
+        title_tag = (
+            soup.find('span', {'class': 'pdp-mod-product-badge-title'}) or 
+            soup.find('h1')
+        )
         title = title_tag.text.strip() if title_tag else "E-commerce Product"
         
-        # Price finding logic across standard & local e-commerce structures
+        # Price finding logic across Daraz and standard e-commerce structures
         price_tag = (
             soup.find('span', {'class': 'pdp-price'}) or 
+            soup.find('span', class_=lambda value: value and 'pdp-price' in value) or
+            soup.find('span', {'class': 'notranslate'}) or
             soup.find('span', {'class': 'a-price-whole'}) or 
             soup.find('p', class_='price_color') or
             soup.find('span', {'class': 'price'}) or
@@ -68,13 +71,13 @@ def get_competitor_data(url):
         )
         
         if not price_tag:
-            raise Exception("Could not locate price element. The site might be blocking direct scraping.")
+            raise Exception("Could not locate price element on this page structure.")
             
         price_text = price_tag.text
         clean_price = ''.join(c for c in price_text if c.isdigit() or c == '.')
         
         if not clean_price:
-            raise Exception("Extracted price is empty.")
+            raise Exception("Extracted price value is empty.")
             
         return title, float(clean_price)
         
@@ -230,9 +233,9 @@ with tab1:
     st.subheader("Run Instant Competitor Analysis")
     target_url = st.text_input(
         "Competitor Product URL", 
-        value="http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
+        value="https://www.daraz.com.bd/"
     )
-    user_baseline = st.number_input("Your Store's Baseline Price ($ USD)", min_value=0.0, value=55.00, step=1.0)
+    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=5500.0, step=100.0)
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
         with st.spinner("Scraping competitor and consulting Gemini AI..."):
@@ -241,7 +244,7 @@ with tab1:
                 
                 col1, col2 = st.columns(2)
                 col1.metric("Product Title", title)
-                col2.metric("Competitor Live Price", f"${live_price:.2f}", delta=f"${live_price - user_baseline:.2f} vs Baseline")
+                col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline")
                 
                 st.markdown("---")
                 st.subheader("🤖 AI Counter-Strategy")
