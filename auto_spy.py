@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import smtplib
 from email.mime.text import MIMEText
@@ -6,19 +7,14 @@ import requests
 from bs4 import BeautifulSoup
 from google import genai
 
-# 1. Configuration from GitHub Secrets
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
-SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")  # Gmail 16-digit App Password
+SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 
-# 2. Client Watchlist (In production, this loads from a database/sheet)
-WATCHLIST = [
-    {
-        "client_email": SENDER_EMAIL,  # Replace with client's email
-        "url": "http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
-        "baseline_price": 55.00
-    }
-]
+# Load all active clients from clients.json
+def load_clients():
+    with open("clients.json", "r") as f:
+        return json.load(f)
 
 def get_product_data(product_url):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -80,10 +76,11 @@ def send_alert_email(to_email, product_name, old_usd, new_usd, strategy, url):
     print(f"Alert email sent to {to_email}!")
 
 def run_automation():
-    for item in WATCHLIST:
+    clients = load_clients()
+    for item in clients:
         try:
             title, current_price = get_product_data(item["url"])
-            print(f"Checked: {title} | Baseline: ${item['baseline_price']:.2f} | Live: ${current_price:.2f}")
+            print(f"Checking for {item['client_email']}: {title} | Live: ${current_price:.2f}")
             
             if current_price != item["baseline_price"]:
                 strategy = get_ai_strategy(title, item["baseline_price"], current_price)
@@ -96,7 +93,7 @@ def run_automation():
                     item["url"]
                 )
         except Exception as e:
-            print(f"Error checking {item['url']}: {e}")
+            print(f"Error for {item['client_email']}: {e}")
 
 if __name__ == "__main__":
     run_automation()
