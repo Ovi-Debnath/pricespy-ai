@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import base64
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -16,15 +17,15 @@ st.set_page_config(
 st.title("🕵️‍♂️ PriceSpy AI: Automated B2B Competitor Price Monitor")
 st.markdown("Monitor your competitors 24/7 and get AI-driven counter-strategy alerts instantly.")
 
-# 1. API Key Configuration
-# Looks for Streamlit Secrets first, then environment variables
+# 1. API & GitHub Configuration
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+github_token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
+github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 
 if not api_key:
-    st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets or environment variables.")
+    st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
     st.stop()
 
-# Initialize Gemini Client
 client = genai.Client(api_key=api_key)
 
 # 2. Function to fetch live competitor price
@@ -34,7 +35,6 @@ def get_competitor_data(url):
         response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Scrape title and price (Optimized for books.toscrape.com or standard e-commerce selectors)
         title = soup.find('h1').text.strip()
         price_text = soup.find('p', class_='price_color').text
         clean_price = price_text.replace('$', '').replace('£', '').replace('Â', '').strip()
@@ -52,7 +52,6 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
         f"to protect our profit margins and market share."
     )
     
-    # Filter for active Flash text models dynamically
     available_models = []
     try:
         for m in client.models.list():
@@ -69,11 +68,9 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
     except Exception:
         pass
     
-    # Fallback default models if list fails
     if not available_models:
         available_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
-    # Try models sequentially until one succeeds
     for model_name in available_models:
         try:
             response = client.models.generate_content(
@@ -88,30 +85,67 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
             
     return "• Review pricing manually.\n• Monitor competitor stock levels.\n• Maintain value proposition."
 
-# 4. Function to save new clients to clients.json automatically
-def save_client_to_db(email, product_url, baseline):
-    file_path = "clients.json"
+# 4. Sync new clients directly to GitHub clients.json
+def save_client_to_github(email, product_url, baseline):
+    new_entry = {
+        "client_email": email,
+        "url": product_url,
+        "baseline_price": float(baseline)
+    }
+
+    # If GitHub secrets are configured, push directly to GitHub repository
+    if github_token and github_repo:
+        api_url = f"https://api.github.com/repos/{github_repo}/contents/clients.json"
+        headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Accept": "application/vnd.github+json"
+        }
+        try:
+            res = requests.get(api_url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                file_data = res.json()
+                sha = file_data["sha"]
+                decoded_content = base64.b64decode(file_data["content"]).decode("utf-8")
+                clients = json.loads(decoded_content)
+            else:
+                sha = None
+                clients = []
+
+            clients.append(new_entry)
+            updated_content = json.dumps(clients, indent=4)
+            encoded_content = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
+
+            payload = {
+                "message": f"Add client monitoring for {email}",
+                "content": encoded_content
+            }
+            if sha:
+                payload["sha"] = sha
+
+            put_res = requests.put(api_url, headers=headers, json=payload, timeout=10)
+            if put_res.status_code in [200, 201]:
+                return True
+            else:
+                return f"GitHub sync error: {put_res.json().get('message', 'Unknown error')}"
+        except Exception as e:
+            return str(e)
+
+    # Fallback local save
     try:
+        file_path = "clients.json"
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
                 clients = json.load(f)
         else:
             clients = []
-            
-        # Append new client watch item
-        clients.append({
-            "client_email": email,
-            "url": product_url,
-            "baseline_price": float(baseline)
-        })
-        
+        clients.append(new_entry)
         with open(file_path, "w") as f:
             json.dump(clients, f, indent=4)
         return True
     except Exception as e:
         return str(e)
 
-# --- UI TABS / SECTIONS ---
+# --- UI TABS ---
 tab1, tab2 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding"])
 
 with tab1:
@@ -141,7 +175,7 @@ with tab1:
 
 with tab2:
     st.subheader("🚀 Register for 24/7 Background Monitoring")
-    st.markdown("Add your store products to the automated monitoring queue. Our background bot will check prices every 6 hours and email you alerts.")
+    st.markdown("Add your store products to the automated monitoring queue. Our background bot checks prices every 6 hours and sends AI strategy alerts straight to your inbox.")
     
     with st.form("client_onboarding_form"):
         client_email = st.text_input("Your Email (for alerts)")
@@ -152,11 +186,11 @@ with tab2:
         
         if submit_client:
             if client_email and client_url:
-                result = save_client_to_db(client_email, client_url, client_baseline)
-                if result is True:
-                    st.success(f"Successfully registered {client_email}! Our 24/7 bot will now monitor this URL.")
-                    st.info("Tip: If running locally, make sure to commit and push the updated `clients.json` file to GitHub so the cloud action can read it.")
-                else:
-                    st.error(f"Failed to save: {result}")
+                with st.spinner("Activating 24/7 monitoring..."):
+                    result = save_client_to_github(client_email, client_url, client_baseline)
+                    if result is True:
+                        st.success(f"✅ Active! Monitoring is now live for {client_email}. You will receive automated alerts whenever the price changes.")
+                    else:
+                        st.error(f"Failed to register: {result}")
             else:
                 st.warning("Please provide both your email and the competitor URL.")
