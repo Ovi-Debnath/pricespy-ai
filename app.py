@@ -93,7 +93,6 @@ def _find_price_in_jsonld(soup):
 
 def _parse_html_for_price(html_text):
     soup = BeautifulSoup(html_text, 'html.parser')
-
     price_val = _find_price_in_jsonld(soup)
 
     if not price_val:
@@ -147,7 +146,6 @@ def _fetch_via_reader(clean_url):
         raise Exception(f"Reader fallback failed (Status Code: {r.status_code})")
 
     text = r.text
-
     title = None
     tm = re.search(r'^Title:\s*(.+)$', text, flags=re.MULTILINE)
     if tm:
@@ -161,7 +159,6 @@ def _fetch_via_reader(clean_url):
 def get_competitor_data(url):
     try:
         clean_url = str(url).strip().strip("'").strip('"')
-
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
@@ -186,7 +183,6 @@ def get_competitor_data(url):
                 raise Exception("Daraz returned a captcha / security page to the server")
 
             soup = BeautifulSoup(html_text, 'html.parser')
-
             og_title = soup.find('meta', property='og:title')
             if og_title and og_title.get('content'):
                 title = og_title.get('content').strip()
@@ -367,20 +363,17 @@ tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onbo
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
-    # FIX: value="" করে বক্সটি সম্পূর্ণ খালি করা হয়েছে যাতে ক্লায়েন্ট নিজে ইনপুট দিতে পারে
+    # FIX: ডিফল্ট ভ্যালু খালি রাখা হয়েছে যাতে ক্লায়েন্ট নিজে তার লিংক এবং প্রাইস বসাতে পারেন
     target_url = st.text_input(
         "Competitor Product URL", 
         value="",
-        placeholder="https://www.daraz.com.bd/products/..."
+        placeholder="https://www.daraz.com.bd/products/your-product-link..."
     )
-    # FIX: value=0.0 এবং step=1.0 করে বেসলাইন প্রাইস বক্সটিও খালি রাখা হয়েছে
-    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=0.0, step=1.0, placeholder="Enter your baseline price")
+    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=0.0, step=10.0, placeholder="Enter your baseline price")
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
-        if not target_url.strip():
-            st.warning("⚠️ Please enter a competitor product URL.")
-        elif user_baseline <= 0:
-            st.warning("⚠️ Please enter a valid baseline price greater than 0.")
+        if not target_url:
+            st.warning("Please enter a competitor product URL.")
         else:
             with st.spinner("Scraping competitor and consulting Gemini AI..."):
                 try:
@@ -388,11 +381,11 @@ with tab1:
                     
                     col1, col2 = st.columns(2)
                     col1.metric("Product Title", title)
-                    col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline")
+                    col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline" if user_baseline > 0 else "Live Price")
                     
                     st.markdown("---")
                     st.subheader("🤖 AI Counter-Strategy")
-                    strategy = get_ai_counter_strategy(title, user_baseline, live_price)
+                    strategy = get_ai_counter_strategy(title, user_baseline if user_baseline > 0 else live_price, live_price)
                     st.write(strategy)
                     
                 except Exception as err:
@@ -416,3 +409,114 @@ with tab2:
                 </button>
             </a>
         """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        with st.form("global_client_form"):
+            email = st.text_input("Your Email (used in checkout)")
+            url = st.text_input("Competitor URL to Track", placeholder="Paste competitor product URL here...")
+            baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=0.0, step=1.0)
+            
+            if st.form_submit_button("Activate Global Bot", use_container_width=True):
+                if email and url:
+                    with st.spinner("Activating 24/7 monitoring..."):
+                        res = save_client_to_github(email, url, baseline, is_local=False)
+                        if res is True:
+                            st.success(f"✅ Global monitoring active for {email}!")
+                        else:
+                            st.error(f"Error: {res}")
+                else:
+                    st.warning("Please fill in all fields.")
+
+    else:
+        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳2,500 BDT/month)")
+        st.markdown("Send payment via bKash or Nagad and enter your Transaction ID below to activate.")
+        
+        if payment_number:
+            if st.button("📲 Show Payment Number"):
+                st.session_state["show_pay_number"] = True
+            if st.session_state.get("show_pay_number"):
+                st.info(f"📌 Send Money to: **{payment_number}** (bKash / Nagad / Upay / Rocket Personal)")
+        else:
+            st.warning("Payment number is not configured yet. Please contact support.")
+        
+        with st.form("local_client_form"):
+            local_email = st.text_input("Your Email (for receiving alerts)")
+            local_url = st.text_input("Competitor Product URL to Track", placeholder="Paste competitor product URL here...")
+            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
+            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
+            
+            if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
+                if local_email and local_url and trx_id:
+                    with st.spinner("Submitting payment and activating bot..."):
+                        formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
+                        res = save_client_to_github(formatted_email, local_url, local_baseline, is_local=True, trx_id=trx_id)
+                        if res is True:
+                            st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
+                        else:
+                            st.error(f"Error: {res}")
+                else:
+                    st.warning("Please fill in all required fields including the Transaction ID.")
+
+with tab3:
+    st.subheader("🔒 Admin Payment Verification Dashboard")
+    st.markdown("Enter admin password to review paid local clients and approve/remove monitors.")
+    
+    admin_pass = st.text_input("Admin Password", type="password")
+    
+    if not admin_password:
+        st.error("⚠️ ADMIN_PASSWORD is not configured! Please add it in Streamlit Secrets.")
+    elif admin_pass and hmac.compare_digest(admin_pass.encode("utf-8"), str(admin_password).encode("utf-8")):
+        st.success("Access Granted!")
+        
+        try:
+            clients_data = load_clients_data()
+            st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
+            
+            if len(clients_data) == 0:
+                st.info("No clients found.")
+            
+            for i, client in enumerate(clients_data):
+                st.markdown("---")
+                status_badge = "🟢 Approved" if client.get("approved", True) else "🟡 Pending Payment"
+                st.write(f"**Client #{i+1}** — Status: {status_badge}")
+                st.write(f"- **Email / Info:** `{client['client_email']}`")
+                st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
+                st.write(f"- **Tracked URL:** {client['url']}")
+                st.write(f"- **Baseline Price:** {client['baseline_price']}")
+                
+                col_a, col_b = st.columns(2)
+                
+                # Approve button with instant email notification
+                if not client.get("approved", True):
+                    if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
+                        clients_data[i]["approved"] = True
+                        
+                        # Save to GitHub & Local
+                        res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
+                        
+                        if res is True:
+                            # Send Instant Activation Email
+                            mail_sent, mail_msg = send_activation_email(client['client_email'], client['url'])
+                            if mail_sent:
+                                st.success(f"Client #{i+1} approved and activation email sent successfully!")
+                            else:
+                                st.warning(f"Client approved and saved, but email failed: {mail_msg}")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to sync with GitHub: {res}")
+                
+                # Remove button
+                if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
+                    removed_client = clients_data.pop(i)
+                    res = update_github_clients_file(clients_data, commit_message=f"Remove client {removed_client['client_email']}")
+                    if res is True:
+                        st.warning("Client removed and changes saved to GitHub!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to sync with GitHub: {res}")
+                        
+        except Exception as e:
+            st.error(f"Error loading data: {e}")
+            
+    elif admin_pass:
+        st.error("Incorrect password!")
