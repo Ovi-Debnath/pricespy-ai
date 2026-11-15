@@ -230,3 +230,47 @@ with tab2:
                             st.error(f"Error: {res}")
                 else:
                     st.warning("Please fill in all required fields including the Transaction ID.")
+# --- UI TABS ---
+tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "🔒 Admin Dashboard"])
+
+# (Tab 1 & Tab 2 আগের মতোই থাকবে)
+
+with tab3:
+    st.subheader("🔒 Admin Payment Verification Dashboard")
+    st.markdown("Enter admin password to review paid local clients and active monitors.")
+    
+    admin_pass = st.text_input("Admin Password", type="password")
+    
+    # আপনি আপনার ইচ্ছামতো পাসওয়ার্ড দিতে পারেন (যেমন: "admin123")
+    if admin_pass == "admin123":
+        st.success("Access Granted!")
+        
+        # Load clients from local or GitHub
+        try:
+            if os.path.exists("clients.json"):
+                with open("clients.json", "r") as f:
+                    clients_data = json.load(f)
+                
+                st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
+                
+                # Display in a clean table or list
+                for i, client in enumerate(clients_data):
+                    st.markdown(f"---")
+                    st.write(f"**Client #{i+1}**")
+                    st.write(f"- **Email / Trx Info:** `{client['client_email']}`")
+                    st.write(f"- **Tracked URL:** {client['url']}")
+                    st.write(f"- **Baseline Price:** ${client['baseline_price']}")
+                    
+                    if st.button(f"Remove Client #{i+1}", key=f"del_{i}"):
+                        clients_data.pop(i)
+                        with open("clients.json", "w") as f:
+                            json.dump(clients_data, f, indent=4)
+                        st.warning("Client removed! Please refresh the page.")
+                        st.rerun()
+            else:
+                st.info("No clients.json found.")
+        except Exception as e:
+            st.error(f"Error loading data: {e}")
+            
+    elif admin_pass:
+        st.error("Incorrect password!")
