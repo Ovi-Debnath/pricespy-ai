@@ -34,7 +34,25 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# 2. Advanced Robust Scraper using Cloudscraper & Regex to extract price from raw text/scripts/meta
+# Helper function to safely parse and validate price numbers
+def extract_valid_price(text):
+    if not text:
+        return None
+    # কমা রিমুভ করা
+    text = str(text).replace(',', '')
+    # সঠিক সংখ্যা ও দশমিক খোঁজা (যেমন: 1550 বা 1550.00)
+    matches = re.findall(r'\b\d+(?:\.\d{1,2})?\b', text)
+    for m in matches:
+        try:
+            val = float(m)
+            # বাস্তবসম্মত প্রাইস রেঞ্জ ফিল্টার (খুব ছোট বা জগাখিচুড়ি নম্বর বাদ দিতে)
+            if 10 <= val <= 10000000:
+                return val
+        except ValueError:
+            continue
+    return None
+
+# 2. Advanced Robust Scraper with Safe Price Extraction
 def get_competitor_data(url):
     try:
         scraper = cloudscraper.create_scraper(
@@ -51,7 +69,7 @@ def get_competitor_data(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 1. Product Title finding logic
+        # ১. প্রোডাক্ট টাইটেল খোঁজা
         title_tag = (
             soup.find('span', {'class': 'pdp-mod-product-badge-title'}) or 
             soup.find('h1', {'class': 'pdp-mod-product-title'}) or
@@ -60,48 +78,32 @@ def get_competitor_data(url):
         )
         title = title_tag.text.strip() if title_tag else "E-commerce Product"
         
-        # 2. Smart Price Extraction for Daraz and dynamic e-commerce sites
+        # ২. নিরাপদ ও ধাপে ধাপে প্রাইস এক্সট্রাকশন
         price_val = None
         
-        # Method A: Extract from JSON / script data payloads (common in Daraz)
-        json_price_match = re.search(r'"price"\s*:\s*"([0-9\.]+)"', response.text)
-        if json_price_match:
-            price_val = json_price_match.group(1)
+        # মেটা ট্যাগ থেকে খোঁজা
+        meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', itemprop='price')
+        if meta_price:
+            price_val = extract_valid_price(meta_price.get('content'))
             
-        # Method B: Extract from meta tags
+        # JSON পে-লোড বা স্ক্রিপ্ট থেকে খোঁজা
         if not price_val:
-            meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', itemprop='price')
-            if meta_price:
-                price_val = meta_price.get('content')
+            json_price_match = re.search(r'"price"\s*:\s*"([0-9\.]+)"', response.text)
+            if json_price_match:
+                price_val = extract_valid_price(json_price_match.group(1))
                 
-        # Method C: Scan for potential price elements via class names
+        # সম্ভাব্য প্রাইস ক্লাস থেকে খোঁজা
         if not price_val:
-            possible_price_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
-            for tag in possible_price_tags:
-                text = tag.get_text().strip()
-                clean_t = ''.join(c for c in text if c.isdigit() or c == '.')
-                if len(clean_t) > 0 and float(clean_t) > 5:
-                    price_val = clean_t
-                    break
-                    
-        # Method D: General currency pattern search in text
-        if not price_val:
-            possible_tags = soup.find_all(text=re.compile(r'[৳$£€]\s*[0-9,]+(\.[0-9]+)?'))
-            for t in possible_tags:
-                clean_t = ''.join(c for c in t if c.isdigit() or c == '.')
-                if len(clean_t) > 0 and float(clean_t) > 5:
-                    price_val = clean_t
+            possible_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
+            for tag in possible_tags:
+                price_val = extract_valid_price(tag.get_text())
+                if price_val:
                     break
                     
         if not price_val:
-            raise Exception("Could not locate price element on this page structure.")
+            raise Exception("Could not locate a valid price element on this page structure.")
             
-        clean_price_str = ''.join(c for c in price_val if c.isdigit() or c == '.')
-        
-        if not clean_price_str:
-            raise Exception("Extracted price value is empty.")
-            
-        return title, float(clean_price_str)
+        return title, float(price_val)
         
     except Exception as e:
         raise Exception(f"Failed to scrape URL. Details: {e}")
