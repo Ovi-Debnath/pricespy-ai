@@ -217,11 +217,11 @@ def get_competitor_data(url):
         raise Exception(f"Failed to scrape URL. Details: {e}")
 
 # 3. Robust AI Model Switcher & Strategy Generator
-def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
+def get_ai_counter_strategy(product_name, baseline_price, current_price):
     prompt = (
         f"You are an expert e-commerce pricing strategist. "
-        f"Our baseline price for '{product_name}' is ${baseline_usd:.2f}, "
-        f"but the competitor just changed their price to ${current_usd:.2f}. "
+        f"Our baseline price for '{product_name}' is {baseline_price:.2f}, "
+        f"but the competitor just changed their price to {current_price:.2f}. "
         f"Provide 3 concise, highly actionable bullet points on how our store should respond immediately "
         f"to protect our profit margins and market share."
     )
@@ -317,18 +317,25 @@ def update_github_clients_file(clients_list, commit_message="Update clients.json
     return True
 
 # 6. Function to send Activation Email
-def send_activation_email(to_email, urls_list):
+def send_activation_email(to_email, items_list):
     clean_email = to_email.split(" [")[0].strip()
     if not sender_email or not sender_password:
         return False, "Sender email or password credentials missing in secrets."
     
-    formatted_urls = "\n".join([f"- {u}" for u in urls_list]) if isinstance(urls_list, list) else f"- {urls_list}"
+    formatted_items = []
+    for item in items_list:
+        if isinstance(item, dict):
+            formatted_items.append(f"- URL: {item.get('url')} | Your Baseline: {item.get('baseline_price')}")
+        else:
+            formatted_items.append(f"- URL: {item}")
+            
+    items_str = "\n".join(formatted_items)
     
     subject = "🚀 Your PriceSpy AI Monitoring is Now Active!"
     body = (
         f"Hello,\n\n"
         f"Your payment has been successfully verified and your 24/7 competitor price monitoring bot is now LIVE!\n"
-        f"Tracked URLs:\n{formatted_urls}\n\n"
+        f"Tracked Products:\n{items_str}\n\n"
         f"Our bot will check competitor prices regularly and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
         f"Thank you for using PriceSpy AI!"
     )
@@ -346,13 +353,12 @@ def send_activation_email(to_email, urls_list):
     except Exception as e:
         return False, str(e)
 
-# Save new client function with package support
-def save_client_to_github(email, urls_list, baseline, plan_name, is_local=False, trx_id=""):
+# Save new client function with multiple product-price pairs
+def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
     clients = load_clients_data()
     new_entry = {
         "client_email": email,
-        "urls": urls_list if isinstance(urls_list, list) else [urls_list],
-        "baseline_price": float(baseline),
+        "products": product_items, # [{"url": "...", "baseline_price": 500.0}, ...]
         "plan": plan_name,
         "approved": not is_local,
         "trx_id": trx_id
@@ -371,7 +377,7 @@ with tab1:
         value="",
         placeholder="https://www.daraz.com.bd/products/your-product-link..."
     )
-    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=0.0, step=10.0, placeholder="Enter your baseline price")
+    user_baseline = st.number_input("Your Store's Baseline Price (BDT/USD)", min_value=0.0, value=0.0, step=10.0)
     
     if st.button("Check Price & Get AI Strategy", type="primary"):
         if not target_url:
@@ -421,7 +427,8 @@ with tab2:
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
                 if email and url:
                     with st.spinner("Activating 24/7 monitoring..."):
-                        res = save_client_to_github(email, [url], baseline, plan_name="Global Plan", is_local=False)
+                        product_items = [{"url": url.strip(), "baseline_price": float(baseline)}]
+                        res = save_client_to_github(email, product_items, plan_name="Global Plan", is_local=False)
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
@@ -432,7 +439,6 @@ with tab2:
     else:
         st.markdown("### 🇧🇩 Bangladesh Local Packages")
         
-        # ৳১,০০০ টাকার সিঙ্গেল ইউআরএল প্যাকেজ সহ অন্যান্য প্যাকেজ অপশন
         local_plan = st.selectbox(
             "Select Your Package", 
             [
@@ -462,38 +468,51 @@ with tab2:
         
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
+            st.markdown(f"**Enter Competitor URLs & Your Baseline Prices (Up to {max_links} products):**")
             
-            if max_links == 1:
-                st.markdown("**Enter Competitor Product URL to Track:**")
-                urls_input = st.text_input("Competitor Product URL", placeholder="https://www.daraz.com.bd/products/...")
-            else:
-                st.markdown(f"**Enter URLs to Track (Provide up to {max_links} competitor links, separated by new line or comma):**")
-                urls_input = st.text_area("Competitor Product URLs", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
+            # ডাইনামিক ইনপুট রো: প্রতিটি প্রোডাক্টের জন্য আলাদা URL ও আলাদা Baseline Price
+            product_inputs = []
+            for idx in range(max_links):
+                c1, c2 = st.columns([3, 1])
+                u_val = c1.text_input(
+                    f"Product #{idx+1} URL", 
+                    key=f"url_{max_links}_{idx}", 
+                    placeholder="https://www.daraz.com.bd/products/..."
+                )
+                p_val = c2.number_input(
+                    f"Baseline (৳)", 
+                    min_value=0.0, 
+                    value=0.0, 
+                    step=50.0, 
+                    key=f"price_{max_links}_{idx}"
+                )
+                product_inputs.append((u_val, p_val))
             
-            local_baseline = st.number_input("Average Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
             trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
-                if local_email and urls_input and trx_id:
-                    if max_links == 1:
-                        url_list = [urls_input.strip()] if urls_input.strip() else []
-                    else:
-                        url_list = [u.strip() for u in re.split(r'[\n,]+', urls_input) if u.strip()]
-                    
-                    if len(url_list) == 0:
-                        st.warning("Please enter at least one valid product URL.")
-                    elif len(url_list) > max_links:
-                        st.warning(f"You selected the {plan_name} which allows up to {max_links} URLs. You entered {len(url_list)} URLs.")
-                    else:
-                        with st.spinner("Submitting payment and activating bot..."):
-                            formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
-                            res = save_client_to_github(formatted_email, url_list, local_baseline, plan_name=plan_name, is_local=True, trx_id=trx_id)
-                            if res is True:
-                                st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
-                            else:
-                                st.error(f"Error: {res}")
+                # যেসব বক্সে ইউজার URL দিয়েছেন সেগুলো ফিল্টার করে নেওয়া
+                valid_products = [
+                    {"url": u.strip(), "baseline_price": float(p)} 
+                    for u, p in product_inputs if u.strip()
+                ]
+                
+                if local_email and len(valid_products) > 0 and trx_id:
+                    with st.spinner("Submitting payment and activating bot..."):
+                        formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
+                        res = save_client_to_github(
+                            formatted_email, 
+                            valid_products, 
+                            plan_name=plan_name, 
+                            is_local=True, 
+                            trx_id=trx_id
+                        )
+                        if res is True:
+                            st.success(f"✅ Payment submitted with {len(valid_products)} product(s)! Your monitoring bot will be activated shortly.")
+                        else:
+                            st.error(f"Error: {res}")
                 else:
-                    st.warning("Please fill in all required fields including URLs and Transaction ID.")
+                    st.warning("Please enter your email, at least 1 product URL, and your Transaction ID.")
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
@@ -520,25 +539,30 @@ with tab3:
                 st.write(f"- **Email / Info:** `{client['client_email']}`")
                 st.write(f"- **Plan:** `{client.get('plan', 'Standard')}`")
                 st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
-                st.write(f"- **Tracked URLs:**")
-                client_urls = client.get('urls', [client.get('url', 'N/A')])
-                for u in client_urls:
-                    st.write(f"  - {u}")
-                st.write(f"- **Baseline Price:** {client['baseline_price']}")
+                st.write(f"- **Tracked Products:**")
+                
+                # নতুন এবং পুরোনো উভয় ডেটা স্ট্রাকচার সাপোর্ট করবে
+                products = client.get('products')
+                if products:
+                    for idx, item in enumerate(products):
+                        st.write(f"  {idx+1}. {item['url']} — **Baseline:** `৳{item['baseline_price']}`")
+                else:
+                    # ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য
+                    old_urls = client.get('urls', [client.get('url', 'N/A')])
+                    old_base = client.get('baseline_price', 0)
+                    for idx, u in enumerate(old_urls):
+                        st.write(f"  {idx+1}. {u} — **Baseline:** `{old_base}`")
                 
                 col_a, col_b = st.columns(2)
                 
-                # Approve button with instant email notification
                 if not client.get("approved", True):
                     if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
                         clients_data[i]["approved"] = True
-                        
-                        # Save to GitHub & Local
                         res = update_github_clients_file(clients_data, commit_message=f"Approve client {client['client_email']}")
                         
                         if res is True:
-                            # Send Instant Activation Email
-                            mail_sent, mail_msg = send_activation_email(client['client_email'], client_urls)
+                            items_to_send = products if products else client.get('urls', [client.get('url', '')])
+                            mail_sent, mail_msg = send_activation_email(client['client_email'], items_to_send)
                             if mail_sent:
                                 st.success(f"Client #{i+1} approved and activation email sent successfully!")
                             else:
@@ -547,7 +571,6 @@ with tab3:
                         else:
                             st.error(f"Failed to sync with GitHub: {res}")
                 
-                # Remove button
                 if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
                     removed_client = clients_data.pop(i)
                     res = update_github_clients_file(clients_data, commit_message=f"Remove client {removed_client['client_email']}")
