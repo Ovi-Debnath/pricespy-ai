@@ -85,12 +85,14 @@ def get_ai_counter_strategy(product_name, baseline_usd, current_usd):
             
     return "• Review pricing manually.\n• Monitor competitor stock levels.\n• Maintain value proposition."
 
-# 4. Sync new clients directly to GitHub clients.json
-def save_client_to_github(email, product_url, baseline):
+# 4. Sync new clients directly to GitHub clients.json with approval status
+def save_client_to_github(email, product_url, baseline, is_local=False, trx_id=""):
     new_entry = {
         "client_email": email,
         "url": product_url,
-        "baseline_price": float(baseline)
+        "baseline_price": float(baseline),
+        "approved": not is_local,  # গ্লোবাল হলে সরাসরি True, লোকাল হলে False (অ্যাডমিন অ্যাপ্রুভ করলে True হবে)
+        "trx_id": trx_id
     }
 
     if github_token and github_repo:
@@ -144,7 +146,7 @@ def save_client_to_github(email, product_url, baseline):
         return str(e)
 
 # --- UI TABS ---
-tab1, tab2 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding"])
+tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "🔒 Admin Dashboard"])
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
@@ -199,7 +201,7 @@ with tab2:
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
                 if email and url:
                     with st.spinner("Activating 24/7 monitoring..."):
-                        res = save_client_to_github(email, url, baseline)
+                        res = save_client_to_github(email, url, baseline, is_local=False)
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
@@ -223,49 +225,56 @@ with tab2:
                 if local_email and local_url and trx_id:
                     with st.spinner("Submitting payment and activating bot..."):
                         formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
-                        res = save_client_to_github(formatted_email, local_url, local_baseline)
+                        res = save_client_to_github(formatted_email, local_url, local_baseline, is_local=True, trx_id=trx_id)
                         if res is True:
                             st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
                         else:
                             st.error(f"Error: {res}")
                 else:
                     st.warning("Please fill in all required fields including the Transaction ID.")
-# --- UI TABS ---
-tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "🔒 Admin Dashboard"])
-
-# (Tab 1 & Tab 2 আগের মতোই থাকবে)
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("Enter admin password to review paid local clients and active monitors.")
+    st.markdown("Enter admin password to review paid local clients and approve/remove monitors.")
     
     admin_pass = st.text_input("Admin Password", type="password")
     
-    # আপনি আপনার ইচ্ছামতো পাসওয়ার্ড দিতে পারেন (যেমন: "admin123")
-    if admin_pass == "admin123":
+    if admin_pass == "admin123":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
         st.success("Access Granted!")
         
-        # Load clients from local or GitHub
         try:
-            if os.path.exists("clients.json"):
-                with open("clients.json", "r") as f:
+            file_path = "clients.json"
+            if os.path.exists(file_path):
+                with open(file_path, "r") as f:
                     clients_data = json.load(f)
                 
                 st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
                 
-                # Display in a clean table or list
                 for i, client in enumerate(clients_data):
-                    st.markdown(f"---")
-                    st.write(f"**Client #{i+1}**")
-                    st.write(f"- **Email / Trx Info:** `{client['client_email']}`")
+                    st.markdown("---")
+                    status_badge = "🟢 Approved" if client.get("approved", True) else "🟡 Pending Payment"
+                    st.write(f"**Client #{i+1}** — Status: {status_badge}")
+                    st.write(f"- **Email / Info:** `{client['client_email']}`")
+                    st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
                     st.write(f"- **Tracked URL:** {client['url']}")
-                    st.write(f"- **Baseline Price:** ${client['baseline_price']}")
+                    st.write(f"- **Baseline Price:** {client['baseline_price']}")
                     
-                    if st.button(f"Remove Client #{i+1}", key=f"del_{i}"):
+                    col_a, col_b = st.columns(2)
+                    
+                    # যদি পেন্ডিং থাকে, তবে অ্যাপ্রুভ করার বাটন দেখাবে
+                    if not client.get("approved", True):
+                        if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
+                            clients_data[i]["approved"] = True
+                            with open(file_path, "w") as f:
+                                json.dump(clients_data, f, indent=4)
+                            st.success(f"Client #{i+1} approved successfully!")
+                            st.rerun()
+                    
+                    if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
                         clients_data.pop(i)
-                        with open("clients.json", "w") as f:
+                        with open(file_path, "w") as f:
                             json.dump(clients_data, f, indent=4)
-                        st.warning("Client removed! Please refresh the page.")
+                        st.warning("Client removed!")
                         st.rerun()
             else:
                 st.info("No clients.json found.")
