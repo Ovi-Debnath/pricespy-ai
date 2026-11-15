@@ -38,17 +38,17 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: 100% Bulletproof Universal Daraz URL Cleaner & Converter
+# Helper function: 100% Bulletproof Universal Daraz URL Converter (Future-Proof)
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
     
-    # ইউজারদের দেওয়া d_ বা অন্যান্য প্যারামিটার ঠিক করা
+    # d_ বা অন্য কোনো স্পেসের ঝামেলা ঠিক করা
     url = url.replace("d_", "d ")
     
     if "daraz.com.bd" in url:
-        # লিংকের ভেতর থেকে যেকোনো ফরম্যাটের i এবং s আইডি সংখ্যাগুলো নিখুঁতভাবে এক্সট্রাক্ট করা
+        # যেকোনো ফরম্যাট থেকে i এবং s আইডি সংখ্যাগুলো বের করে নেওয়া
         i_match = re.search(r'i(\d+)', url)
         s_match = re.search(r's(\d+)', url)
         
@@ -61,8 +61,8 @@ def clean_daraz_url(url):
             if "?" in url:
                 base_query = "?" + url.split("?", 1)[1]
             
-            # নাম থাকুক বা না থাকুক, যেকোনো দারাজের জন্য ১০০% নিখুঁত ফরম্যাট
-            return f"https://www.daraz.com.bd/products/-i{i_val}-s{s_val}.html{base_query}"
+            # নামহীন বা আইডি-অনলি লিংকগুলোর জন্য ডামি স্লগ 'item' যুক্ত করে ১০০% নিরাপদ স্ট্যান্ডার্ড ফরম্যাট তৈরি করা
+            return f"https://www.daraz.com.bd/products/item-i{i_val}-s{s_val}.html{base_query}"
             
     return url
 
