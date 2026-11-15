@@ -54,5 +54,17 @@
         "plan": "Growth (5 URLs)",
         "approved": true,
         "trx_id": "111"
+    },
+    {
+        "client_email": "ovidebnath63@gmail.com [Paid Trx: 111]",
+        "products": [
+            {
+                "url": "https://www.daraz.com.bd/products/-i323506437-s1541203283.html?scm=1007.51610.379274.0&pvid=bfb54b10-fbfa-4ba1-993f-a0dee2eb8bc0&search=flashsale&spm=a2a0e.tm80335411.FlashSale.d_323506437",
+                "baseline_price": 500.0
+            }
+        ],
+        "plan": "Single Product (1 URL)",
+        "approved": false,
+        "trx_id": "111"
     }
 ]
