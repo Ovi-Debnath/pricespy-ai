@@ -189,20 +189,36 @@ def _find_price_in_jsonld(soup):
     return None
 
 
-def _parse_html_for_price(html_text, sku_id=None):
-    # 1) skuInfos (variant-সহ সঠিক দাম)
+def _visible_price_from_html(html_text):
+    """পেজে ক্রেতা যে দামটা দেখে (ফ্ল্যাশ সেল সহ) সেই element থেকে দাম নেয়।
+    কাটা দাম ('deleted') বাদ।"""
+    soup = BeautifulSoup(html_text, 'html.parser')
+    for wanted in ('pdp-price_type_normal', 'pdp-product-price'):
+        for tag in soup.find_all(['span', 'div'], class_=True):
+            cls = " ".join(tag.get('class', [])).lower()
+            if 'deleted' in cls or wanted not in cls:
+                continue
+            txt = tag.get_text(" ")
+            ps = _currency_prices(txt)
+            v = ps[0] if ps else _to_price(txt)
+            if v:
+                return v
+    return None
+
+
+def _structured_price_from_html(html_text, sku_id=None):
+    """শেষ ভরসা: HTML-এর ভেতরের JSON। এখানে ফ্ল্যাশ সেলের আগের (regular) দাম
+    থাকতে পারে, তাই এটা শুধু তখনই ব্যবহার হয় যখন দৃশ্যমান দাম পাওয়া যায়নি।"""
     price_val = _price_from_sku_infos(html_text, sku_id)
     if price_val:
         return price_val
 
     soup = BeautifulSoup(html_text, 'html.parser')
 
-    # 2) JSON-LD
     price_val = _find_price_in_jsonld(soup)
     if price_val:
         return price_val
 
-    # 3) meta tags
     meta_price = (
         soup.find('meta', property='product:price:amount') or
         soup.find('meta', property='og:price:amount') or
@@ -213,19 +229,6 @@ def _parse_html_for_price(html_text, sku_id=None):
         if price_val:
             return price_val
 
-    # 4) দৃশ্যমান দামের element (কাটা দাম 'deleted' বাদ)
-    for tag in soup.find_all(['span', 'div'], class_=True):
-        cls = " ".join(tag.get('class', [])).lower()
-        if 'deleted' in cls:
-            continue
-        if 'pdp-price_type_normal' in cls or 'pdp-product-price' in cls:
-            txt = tag.get_text(" ")
-            ps = _currency_prices(txt)
-            price_val = ps[0] if ps else _to_price(txt)
-            if price_val:
-                return price_val
-
-    # 5) নির্দিষ্ট key: শুধু salePrice / actPrice / minActionPrice
     raw = (html_text.replace('\\"', '"')
                     .replace('\\u09f3', '৳')
                     .replace('\\u002F', '/'))
@@ -237,8 +240,6 @@ def _parse_html_for_price(html_text, sku_id=None):
         price_val = _to_price(m)
         if price_val:
             return price_val
-
-    # ইচ্ছা করেই "পুরো পেজের প্রথম ৳" ধরা হয়নি: ওটা ভুল দাম দেয়
     return None
 
 
@@ -305,17 +306,35 @@ _NOISE_WORDS = ("off", "voucher", "save", "shipping", "delivery", "min.",
                 "spend", "discount", "cashback", "coupon")
 
 
+_PRICE_LINE_RE = re.compile(
+    r'^\s*(?:৳|Tk\.?|BDT)\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*$',
+    flags=re.IGNORECASE
+)
+
+
 def _price_from_markdown(text):
-    hm = re.search(r'^#{1,2} .+$', text, flags=re.MULTILINE)
-    areas = [text[hm.end():], text] if hm else [text]
-    for area in areas:
-        for line in area.splitlines():
-            low = line.lower()
-            if any(w in low for w in _NOISE_WORDS):
-                continue
-            ps = _currency_prices(line)
-            if ps:
-                return ps[0]
+    """রেন্ডার করা পেজে H1 শিরোনামের পরে প্রথম 'শুধু দাম' লাইনটাই বর্তমান দাম
+    (যেমন '৳ 139')। '৳ 200-30%' হলো কাটা দাম, ওটা বাদ।"""
+    hm = re.search(r'^# .+$', text, flags=re.MULTILINE)
+    area = text[hm.end():] if hm else text
+    lines = area.splitlines()
+
+    # ধাপ ১: যে লাইনে শুধু দাম আছে
+    for line in lines:
+        m = _PRICE_LINE_RE.match(line)
+        if m:
+            v = _to_price(m.group(1))
+            if v:
+                return v
+
+    # ধাপ ২: অন্য লাইন, তবে %/voucher/shipping ইত্যাদি বাদ দিয়ে
+    for line in lines:
+        low = line.lower()
+        if '%' in line or any(w in low for w in _NOISE_WORDS):
+            continue
+        ps = _currency_prices(line)
+        if ps:
+            return ps[0]
     return None
 
 
@@ -340,38 +359,60 @@ def _fetch_via_reader_markdown(url):
 # MAIN SCRAPER
 # =====================================================================
 def get_competitor_data(url):
+    """অগ্রাধিকার: (১) ক্রেতা যে দাম দেখে সেটা, (২) HTML-এর ভেতরের JSON (শেষ ভরসা)।"""
     try:
         clean_url = clean_daraz_url(url)
         _, sku_id = parse_daraz_ids(clean_url)
 
         title = None
         errors = []
+        json_htmls = []   # শেষ ভরসার জন্য জমিয়ে রাখা HTML
 
-        for name, fetcher in (("direct", _fetch_direct),
-                              ("reader-html", _fetch_via_reader_html)):
-            try:
-                html_text = fetcher(clean_url)
-                blocked = _looks_blocked(html_text)
-                if not blocked and not title:
-                    title = _parse_title(html_text)
-
-                price = _parse_html_for_price(html_text, sku_id)
+        # ধাপ ১: সরাসরি HTML -> দৃশ্যমান দামের element
+        try:
+            html_text = _fetch_direct(clean_url)
+            if _looks_blocked(html_text):
+                errors.append("direct: security block page")
+            else:
+                title = _parse_title(html_text) or title
+                price = _visible_price_from_html(html_text)
                 if price:
                     return (title or "E-commerce Product"), float(price)
+                json_htmls.append(html_text)
+                errors.append("direct: visible price not found")
+        except Exception as e:
+            errors.append(f"direct: {e}")
 
-                errors.append(f"{name}: price not found"
-                              + (" (security block page)" if blocked else ""))
-            except Exception as e:
-                errors.append(f"{name}: {e}")
-
-        # শেষ চেষ্টা: markdown
+        # ধাপ ২: Jina রেন্ডার করা পেজ (markdown) -> শিরোনামের পরের প্রথম দাম
         try:
             r_title, r_price = _fetch_via_reader_markdown(clean_url)
+            title = title or r_title
             if r_price:
-                return (title or r_title or "E-commerce Product"), float(r_price)
+                return (title or "E-commerce Product"), float(r_price)
             errors.append("reader-markdown: price not found")
         except Exception as e:
             errors.append(f"reader-markdown: {e}")
+
+        # ধাপ ৩: Jina রেন্ডার করা HTML -> দৃশ্যমান দামের element
+        try:
+            html_text = _fetch_via_reader_html(clean_url)
+            if _looks_blocked(html_text):
+                errors.append("reader-html: security block page")
+            else:
+                title = title or _parse_title(html_text)
+                price = _visible_price_from_html(html_text)
+                if price:
+                    return (title or "E-commerce Product"), float(price)
+                json_htmls.append(html_text)
+                errors.append("reader-html: visible price not found")
+        except Exception as e:
+            errors.append(f"reader-html: {e}")
+
+        # ধাপ ৪ (শেষ ভরসা): HTML-এর ভেতরের JSON (skuInfos, JSON-LD ...)
+        for h in json_htmls:
+            price = _structured_price_from_html(h, sku_id)
+            if price:
+                return (title or "E-commerce Product"), float(price)
 
         raise Exception("Could not extract price. " + " | ".join(errors))
 
