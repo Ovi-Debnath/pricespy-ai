@@ -432,18 +432,22 @@ with tab2:
     else:
         st.markdown("### 🇧🇩 Bangladesh Local Packages")
         
-        # প্যাকেজ সিলেকশন রেডিও বাটন
+        # ৳১,০০০ টাকার সিঙ্গেল ইউআরএল প্যাকেজ সহ অন্যান্য প্যাকেজ অপশন
         local_plan = st.selectbox(
             "Select Your Package", 
             [
-                "Starter Package (৳2,500/mo — Up to 5 Products)", 
+                "Single Product Starter (৳1,000/mo — 1 URL)",
+                "Growth Package (৳2,500/mo — Up to 5 Products)", 
                 "Pro Package (৳5,000/mo — Up to 15 Products)"
             ]
         )
         
-        if "Starter" in local_plan:
+        if "Single Product" in local_plan:
+            max_links = 1
+            plan_name = "Single Product (1 URL)"
+        elif "Growth" in local_plan:
             max_links = 5
-            plan_name = "Starter (5 URLs)"
+            plan_name = "Growth (5 URLs)"
         else:
             max_links = 15
             plan_name = "Pro (15 URLs)"
@@ -459,16 +463,22 @@ with tab2:
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
             
-            st.markdown(f"**Enter URLs to Track (Provide up to {max_links} competitor links, separated by new line or comma):**")
-            urls_input = st.text_area("Competitor Product URLs", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
+            if max_links == 1:
+                st.markdown("**Enter Competitor Product URL to Track:**")
+                urls_input = st.text_input("Competitor Product URL", placeholder="https://www.daraz.com.bd/products/...")
+            else:
+                st.markdown(f"**Enter URLs to Track (Provide up to {max_links} competitor links, separated by new line or comma):**")
+                urls_input = st.text_area("Competitor Product URLs", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
             
             local_baseline = st.number_input("Average Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
             trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
                 if local_email and urls_input and trx_id:
-                    # ইউজার যতগুলো লিংক দিয়েছেন তা লিস্টে রূপান্তর করা
-                    url_list = [u.strip() for u in re.split(r'[\n,]+', urls_input) if u.strip()]
+                    if max_links == 1:
+                        url_list = [urls_input.strip()] if urls_input.strip() else []
+                    else:
+                        url_list = [u.strip() for u in re.split(r'[\n,]+', urls_input) if u.strip()]
                     
                     if len(url_list) == 0:
                         st.warning("Please enter at least one valid product URL.")
@@ -548,7 +558,6 @@ with tab3:
                         st.error(f"Failed to sync with GitHub: {res}")
                         
         except Exception as e:
-        
             st.error(f"Error loading data: {e}")
             
     elif admin_pass:
