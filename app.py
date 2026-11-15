@@ -239,7 +239,7 @@ with tab3:
     
     admin_pass = st.text_input("Admin Password", type="password")
     
-    if admin_pass == "admin123":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
+    if admin_pass == "9973":  # পাসওয়ার্ড নিজের মতো পরিবর্তন করতে পারেন
         st.success("Access Granted!")
         
         try:
