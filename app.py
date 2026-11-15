@@ -38,15 +38,29 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: Daraz URL Cleaner (পুরো লিংক অক্ষুণ্ণ রেখে শুধু d_ কে d -এ রূপান্তর করবে)
+# Helper function: Universal Daraz URL Converter with d_ to d fix
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
     
-    # ইউজার যেমন চেয়েছে: d_526057384 কে d 526057384 এ রূপান্তর করা
+    # ইউজারর নির্দেশ অনুযায়ী d_ কে d স্পেস দিয়ে রিপ্লেস করা
     url = url.replace("d_", "d ")
     
+    if "daraz.com.bd" in url:
+        i_match = re.search(r'i(\d+)', url)
+        s_match = re.search(r's(\d+)', url)
+        
+        if i_match and s_match:
+            i_val = i_match.group(1)
+            s_val = s_match.group(1)
+            
+            base_query = ""
+            if "?" in url:
+                base_query = "?" + url.split("?", 1)[1]
+            
+            return f"https://www.daraz.com.bd/products/-i{i_val}-s{s_val}.html{base_query}"
+            
     return url
 
 # Helper function to safely parse and validate price numbers
@@ -605,7 +619,7 @@ with tab3:
                                 if res is True:
                                     mail_sent, mail_msg = send_activation_email(client['client_email'], verified_list)
                                     if mail_sent:
-                                        st.success(f"Client #{i+1} approved! URLs cleaned, tested, and activation email sent successfully!")
+                                        st.success(f"Client #{i+1} approved! URLs auto-cleaned, tested, and activation email sent successfully!")
                                     else:
                                         st.warning(f"Client approved and saved, but email failed: {mail_msg}")
                                     st.rerun()
