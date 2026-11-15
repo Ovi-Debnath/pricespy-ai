@@ -2,7 +2,6 @@ import os
 import json
 import time
 import base64
-import random
 import smtplib
 from email.mime.text import MIMEText
 import streamlit as st
@@ -37,7 +36,6 @@ client = genai.Client(api_key=api_key)
 # 2. Smart Function to fetch live competitor price using Cloudscraper (Bypasses Daraz/Cloudflare bot protection)
 def get_competitor_data(url):
     try:
-        # Create a cloudscraper instance that mimics a real desktop browser
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -52,34 +50,39 @@ def get_competitor_data(url):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Product Title finding logic (Daraz & standard e-commerce support)
+        # 1. Product Title finding logic (Daraz & standard e-commerce support)
         title_tag = (
             soup.find('span', {'class': 'pdp-mod-product-badge-title'}) or 
+            soup.find('h1', {'class': 'pdp-mod-product-title'}) or
             soup.find('h1')
         )
         title = title_tag.text.strip() if title_tag else "E-commerce Product"
         
-        # Price finding logic across Daraz and standard e-commerce structures
-        price_tag = (
-            soup.find('span', {'class': 'pdp-price'}) or 
-            soup.find('span', class_=lambda value: value and 'pdp-price' in value) or
-            soup.find('span', {'class': 'notranslate'}) or
-            soup.find('span', {'class': 'a-price-whole'}) or 
-            soup.find('p', class_='price_color') or
-            soup.find('span', {'class': 'price'}) or
-            soup.find('div', {'class': 'product-price'})
-        )
+        # 2. Price finding logic (Flexible scanning for Daraz & others)
+        price_text = None
+        possible_price_tags = soup.find_all(['span', 'div', 'p'], class_=lambda value: value and any(x in value.lower() for x in ['price', 'pdp-price', 'notranslate']))
         
-        if not price_tag:
+        for tag in possible_price_tags:
+            text = tag.get_text().strip()
+            if any(char.isdigit() for char in text) and len(text) < 20:
+                price_text = text
+                break
+                
+        # Fallback to meta tags if class search fails
+        if not price_text:
+            meta_price = soup.find('meta', property='product:price:amount') or soup.find('meta', itemprop='price')
+            if meta_price:
+                price_text = meta_price.get('content')
+                
+        if not price_text:
             raise Exception("Could not locate price element on this page structure.")
             
-        price_text = price_tag.text
-        clean_price = ''.join(c for c in price_text if c.isdigit() or c == '.')
+        clean_price_str = ''.join(c for c in price_text if c.isdigit() or c == '.')
         
-        if not clean_price:
+        if not clean_price_str:
             raise Exception("Extracted price value is empty.")
             
-        return title, float(clean_price)
+        return title, float(clean_price_str)
         
     except Exception as e:
         raise Exception(f"Failed to scrape URL. Details: {e}")
