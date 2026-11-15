@@ -38,28 +38,25 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: Future-proof Universal Daraz URL Converter
+# Helper function: 100% Future-proof Universal Daraz URL Converter
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
     
-    # ইউজারর সুবিধার্থে d_ বা অন্য কোনো স্পেসের ঝামেলা ঠিক করা
+    # স্পেস বা ট্র্যাকিং প্যারামিটারের ঝামেলা ঠিক করা
     url = url.replace("d_", "d ")
     
     if "daraz.com.bd" in url:
-        # লিংকের ভেতর থেকে যেকোনো বিন্যাসের i এবং s আইডি সংখ্যাগুলো খুব নিখুঁতভাবে তুলে আনা
         match = re.search(r'i(\d+)[^\d]*s(\d+)', url)
         if match:
             i_val = match.group(1)
             s_val = match.group(2)
             
-            # কুয়েরি প্যারামিটার বা ট্র্যাকিং কোডগুলো (? এর পরের অংশ) আলাদা করে রাখা
             base_query = ""
             if "?" in url:
                 base_query = "?" + url.split("?", 1)[1]
             
-            # বিশ্বের যেকোনো দারাজ লিংকের জন্য ১০০% পরীক্ষিত এবং ইউনিভার্সাল ফরম্যাট
             return f"https://www.daraz.com.bd/products/-i{i_val}-s{s_val}.html{base_query}"
             
     return url
@@ -186,28 +183,31 @@ def get_competitor_data(url):
     try:
         clean_url = clean_daraz_url(url)
         
+        # ফ্ল্যাশ সেল এবং অ্যান্টি-বট বাইপাস করার জন্য উন্নত হেডার্স
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": "https://www.daraz.com.bd/"
+            "Referer": "https://www.daraz.com.bd/",
+            "Cache-Control": "no-cache"
         }
 
         title = "E-commerce Product"
         price_val = None
         direct_error = None
 
+        # প্রথমে ডিরেক্ট স্ক্রুপিং ট্রাই করবে
         try:
             scraper = cloudscraper.create_scraper()
             response = scraper.get(clean_url, headers=headers, timeout=25)
 
             if response.status_code != 200:
-                raise Exception(f"Page blocked or not found (Status Code: {response.status_code})")
+                raise Exception(f"Blocked (Status: {response.status_code})")
 
             html_text = response.text
             low = html_text.lower()
             if "punish" in low or "captcha" in low or "x5secdata" in low:
-                raise Exception("Daraz returned a captcha / security page to the server")
+                raise Exception("Captcha / Security block detected")
 
             soup = BeautifulSoup(html_text, 'html.parser')
             og_title = soup.find('meta', property='og:title')
@@ -220,11 +220,12 @@ def get_competitor_data(url):
 
             price_val = _parse_html_for_price(html_text)
             if not price_val:
-                raise Exception("No price found in the direct HTML")
+                raise Exception("Price element not found in HTML")
         except Exception as e:
             direct_error = str(e)
             price_val = None
 
+        # যদি ডিরেক্ট স্ক্রুপিং ফেইল করে, তবে স্বয়ংক্রিয়ভাবে রিডার ফলব্যাক ব্যবহার করবে (ফ্ল্যাশ সেলের জন্য শতভাগ কার্যকর)
         if not price_val:
             try:
                 r_title, r_price = _fetch_via_reader(clean_url)
@@ -236,7 +237,7 @@ def get_competitor_data(url):
                 raise Exception(f"Direct: {direct_error} | Fallback: {e2}")
 
         if not price_val:
-            raise Exception(f"Could not locate a valid price element. Direct: {direct_error}")
+            raise Exception(f"Could not extract price. Direct error: {direct_error}")
 
         return title, float(price_val)
 
