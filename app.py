@@ -317,17 +317,19 @@ def update_github_clients_file(clients_list, commit_message="Update clients.json
     return True
 
 # 6. Function to send Activation Email
-def send_activation_email(to_email, product_url):
+def send_activation_email(to_email, urls_list):
     clean_email = to_email.split(" [")[0].strip()
     if not sender_email or not sender_password:
         return False, "Sender email or password credentials missing in secrets."
+    
+    formatted_urls = "\n".join([f"- {u}" for u in urls_list]) if isinstance(urls_list, list) else f"- {urls_list}"
     
     subject = "🚀 Your PriceSpy AI Monitoring is Now Active!"
     body = (
         f"Hello,\n\n"
         f"Your payment has been successfully verified and your 24/7 competitor price monitoring bot is now LIVE!\n"
-        f"Tracked URL: {product_url}\n\n"
-        f"Our bot will check the competitor price every 6 hours and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
+        f"Tracked URLs:\n{formatted_urls}\n\n"
+        f"Our bot will check competitor prices regularly and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
         f"Thank you for using PriceSpy AI!"
     )
     
@@ -344,13 +346,14 @@ def send_activation_email(to_email, product_url):
     except Exception as e:
         return False, str(e)
 
-# Save new client function
-def save_client_to_github(email, product_url, baseline, is_local=False, trx_id=""):
+# Save new client function with package support
+def save_client_to_github(email, urls_list, baseline, plan_name, is_local=False, trx_id=""):
     clients = load_clients_data()
     new_entry = {
         "client_email": email,
-        "url": product_url,
+        "urls": urls_list if isinstance(urls_list, list) else [urls_list],
         "baseline_price": float(baseline),
+        "plan": plan_name,
         "approved": not is_local,
         "trx_id": trx_id
     }
@@ -363,7 +366,6 @@ tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onbo
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
-    # FIX: ডিফল্ট ভ্যালু খালি রাখা হয়েছে যাতে ক্লায়েন্ট নিজে তার লিংক এবং প্রাইস বসাতে পারেন
     target_url = st.text_input(
         "Competitor Product URL", 
         value="",
@@ -393,19 +395,19 @@ with tab1:
 
 with tab2:
     st.subheader("🚀 Register & Activate 24/7 Monitoring")
-    st.markdown("Choose your region to complete subscription and activate automated tracking.")
+    st.markdown("Choose your region and package to complete subscription and activate automated tracking.")
     
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
     
     if market == "Global (International)":
-        st.markdown("### 🌍 Global Plan ($10/month)")
+        st.markdown("### 🌍 Global Plan ($49/month)")
         st.markdown("Secured via Lemon Squeezy (Accepts Credit Cards, PayPal, Apple Pay worldwide).")
         
         lemonsqueezy_url = "https://yourstore.lemonsqueezy.com/buy/your-product-id"
         st.markdown(f"""
             <a href="{lemonsqueezy_url}" target="_blank">
                 <button style="background-color: #7c3aed; color: white; padding: 10px 20px; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">
-                    Pay $10/mo via Lemon Squeezy 💳
+                    Pay $49/mo via Lemon Squeezy 💳
                 </button>
             </a>
         """, unsafe_allow_html=True)
@@ -419,7 +421,7 @@ with tab2:
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
                 if email and url:
                     with st.spinner("Activating 24/7 monitoring..."):
-                        res = save_client_to_github(email, url, baseline, is_local=False)
+                        res = save_client_to_github(email, [url], baseline, plan_name="Global Plan", is_local=False)
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
@@ -428,9 +430,24 @@ with tab2:
                     st.warning("Please fill in all fields.")
 
     else:
-        st.markdown("### 🇧🇩 Bangladesh Local Plan (৳1,000 BDT/month)")
-        st.markdown("Send payment via bKash / Nagad / Upay / Rocket and enter your Transaction ID below to activate.")
+        st.markdown("### 🇧🇩 Bangladesh Local Packages")
         
+        # প্যাকেজ সিলেকশন রেডিও বাটন
+        local_plan = st.selectbox(
+            "Select Your Package", 
+            [
+                "Starter Package (৳2,500/mo — Up to 5 Products)", 
+                "Pro Package (৳5,000/mo — Up to 15 Products)"
+            ]
+        )
+        
+        if "Starter" in local_plan:
+            max_links = 5
+            plan_name = "Starter (5 URLs)"
+        else:
+            max_links = 15
+            plan_name = "Pro (15 URLs)"
+
         if payment_number:
             if st.button("📲 Show Payment Number"):
                 st.session_state["show_pay_number"] = True
@@ -441,21 +458,32 @@ with tab2:
         
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
-            local_url = st.text_input("Competitor Product URL to Track", placeholder="Paste competitor product URL here...")
-            local_baseline = st.number_input("Your Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
-            trx_id = st.text_input("bKash / Nagad / Upay / Rocket Transaction ID (TrxID)")
+            
+            st.markdown(f"**Enter URLs to Track (Provide up to {max_links} competitor links, separated by new line or comma):**")
+            urls_input = st.text_area("Competitor Product URLs", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
+            
+            local_baseline = st.number_input("Average Baseline Price (BDT ৳)", min_value=0.0, value=0.0, step=100.0)
+            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
             
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
-                if local_email and local_url and trx_id:
-                    with st.spinner("Submitting payment and activating bot..."):
-                        formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
-                        res = save_client_to_github(formatted_email, local_url, local_baseline, is_local=True, trx_id=trx_id)
-                        if res is True:
-                            st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
-                        else:
-                            st.error(f"Error: {res}")
+                if local_email and urls_input and trx_id:
+                    # ইউজার যতগুলো লিংক দিয়েছেন তা লিস্টে রূপান্তর করা
+                    url_list = [u.strip() for u in re.split(r'[\n,]+', urls_input) if u.strip()]
+                    
+                    if len(url_list) == 0:
+                        st.warning("Please enter at least one valid product URL.")
+                    elif len(url_list) > max_links:
+                        st.warning(f"You selected the {plan_name} which allows up to {max_links} URLs. You entered {len(url_list)} URLs.")
+                    else:
+                        with st.spinner("Submitting payment and activating bot..."):
+                            formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
+                            res = save_client_to_github(formatted_email, url_list, local_baseline, plan_name=plan_name, is_local=True, trx_id=trx_id)
+                            if res is True:
+                                st.success("✅ Payment submitted! Your 24/7 monitoring bot will be activated shortly after verification.")
+                            else:
+                                st.error(f"Error: {res}")
                 else:
-                    st.warning("Please fill in all required fields including the Transaction ID.")
+                    st.warning("Please fill in all required fields including URLs and Transaction ID.")
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
@@ -480,8 +508,12 @@ with tab3:
                 status_badge = "🟢 Approved" if client.get("approved", True) else "🟡 Pending Payment"
                 st.write(f"**Client #{i+1}** — Status: {status_badge}")
                 st.write(f"- **Email / Info:** `{client['client_email']}`")
+                st.write(f"- **Plan:** `{client.get('plan', 'Standard')}`")
                 st.write(f"- **TrxID:** `{client.get('trx_id', 'N/A (Global)')}`")
-                st.write(f"- **Tracked URL:** {client['url']}")
+                st.write(f"- **Tracked URLs:**")
+                client_urls = client.get('urls', [client.get('url', 'N/A')])
+                for u in client_urls:
+                    st.write(f"  - {u}")
                 st.write(f"- **Baseline Price:** {client['baseline_price']}")
                 
                 col_a, col_b = st.columns(2)
@@ -496,7 +528,7 @@ with tab3:
                         
                         if res is True:
                             # Send Instant Activation Email
-                            mail_sent, mail_msg = send_activation_email(client['client_email'], client['url'])
+                            mail_sent, mail_msg = send_activation_email(client['client_email'], client_urls)
                             if mail_sent:
                                 st.success(f"Client #{i+1} approved and activation email sent successfully!")
                             else:
@@ -516,6 +548,7 @@ with tab3:
                         st.error(f"Failed to sync with GitHub: {res}")
                         
         except Exception as e:
+        
             st.error(f"Error loading data: {e}")
             
     elif admin_pass:
