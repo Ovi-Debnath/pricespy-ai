@@ -38,25 +38,30 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Helper function: 100% Future-proof Universal Daraz URL Converter
+# Helper function: 100% Bulletproof Universal Daraz URL Cleaner & Converter
 def clean_daraz_url(url):
     if not url:
         return url
     url = str(url).strip().strip("'").strip('"')
     
-    # স্পেস বা ট্র্যাকিং প্যারামিটারের ঝামেলা ঠিক করা
+    # ইউজারদের দেওয়া d_ বা অন্যান্য প্যারামিটার ঠিক করা
     url = url.replace("d_", "d ")
     
     if "daraz.com.bd" in url:
-        match = re.search(r'i(\d+)[^\d]*s(\d+)', url)
-        if match:
-            i_val = match.group(1)
-            s_val = match.group(2)
+        # লিংকের ভেতর থেকে যেকোনো ফরম্যাটের i এবং s আইডি সংখ্যাগুলো নিখুঁতভাবে এক্সট্রাক্ট করা
+        i_match = re.search(r'i(\d+)', url)
+        s_match = re.search(r's(\d+)', url)
+        
+        if i_match and s_match:
+            i_val = i_match.group(1)
+            s_val = s_match.group(1)
             
+            # ট্র্যাকিং কুয়েরি কোডগুলো (? এর পরের অংশ) আলাদা করে রাখা
             base_query = ""
             if "?" in url:
                 base_query = "?" + url.split("?", 1)[1]
             
+            # নাম থাকুক বা না থাকুক, যেকোনো দারাজের জন্য ১০০% নিখুঁত ফরম্যাট
             return f"https://www.daraz.com.bd/products/-i{i_val}-s{s_val}.html{base_query}"
             
     return url
@@ -183,7 +188,6 @@ def get_competitor_data(url):
     try:
         clean_url = clean_daraz_url(url)
         
-        # ফ্ল্যাশ সেল এবং অ্যান্টি-বট বাইপাস করার জন্য উন্নত হেডার্স
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
@@ -196,7 +200,6 @@ def get_competitor_data(url):
         price_val = None
         direct_error = None
 
-        # প্রথমে ডিরেক্ট স্ক্রুপিং ট্রাই করবে
         try:
             scraper = cloudscraper.create_scraper()
             response = scraper.get(clean_url, headers=headers, timeout=25)
@@ -225,7 +228,6 @@ def get_competitor_data(url):
             direct_error = str(e)
             price_val = None
 
-        # যদি ডিরেক্ট স্ক্রুপিং ফেইল করে, তবে স্বয়ংক্রিয়ভাবে রিডার ফলব্যাক ব্যবহার করবে (ফ্ল্যাশ সেলের জন্য শতভাগ কার্যকর)
         if not price_val:
             try:
                 r_title, r_price = _fetch_via_reader(clean_url)
