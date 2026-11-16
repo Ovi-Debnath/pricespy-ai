@@ -24,24 +24,6 @@
         "expired_notified": false
     },
     {
-        "client_email": "ovidebnath63@gmail.com [Paid Trx: 222]",
-        "password": "7788",
-        "products": [
-            {
-                "url": "https://www.daraz.com.bd/products/item-i209199411-s1159437953.html",
-                "baseline_price": 500.0
-            }
-        ],
-        "pending_products": [],
-        "plan": "Custom Package (1 URLs - 30 Days)",
-        "approved": true,
-        "trx_id": "222",
-        "created_at": "2026-11-16",
-        "expiry_date": "2026-12-16",
-        "reminder_sent": false,
-        "expired_notified": false
-    },
-    {
         "client_email": "ovidebnath63@gmail.com [Paid Trx: 123]",
         "password": "7788",
         "products": [
