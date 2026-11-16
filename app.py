@@ -50,6 +50,15 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 
+# Contact Gmail শুরুতে লুকানো থাকে; ক্লায়েন্ট বাটনে ক্লিক করলে তবেই দেখাবে
+def show_contact_gmail(key_suffix):
+    state_key = f"show_contact_gmail_{key_suffix}"
+    if st.button("📧 Show Contact Gmail", key=f"btn_{state_key}"):
+        st.session_state[state_key] = True
+    if st.session_state.get(state_key):
+        st.info(f"📧 Contact us at: **{contact_gmail}**")
+
+
 # =====================================================================
 # DARAZ URL CLEANER
 # =====================================================================
@@ -678,7 +687,8 @@ with tab1:
 
 with tab2:
     st.subheader("🚀 Register & Activate 24/7 Monitoring")
-    st.markdown(f"For any queries or support, please contact us at: **{contact_gmail}**")
+    st.markdown("For any queries or support, click the button below to see our contact Gmail.")
+    show_contact_gmail("onboarding")
     st.markdown("Choose your region and package to complete subscription and activate automated tracking.")
 
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
@@ -807,7 +817,8 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
-    st.markdown(f"আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। কোনো সমস্যায় যোগাযোগ করুন: **{contact_gmail}**")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। কোনো সমস্যায় যোগাযোগ করতে নিচের বাটনে ক্লিক করুন।")
+    show_contact_gmail("portal")
 
     with st.form("client_login_form"):
         login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
@@ -1010,7 +1021,8 @@ with tab4:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown(f"অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। যোগাযোগ: **{contact_gmail}**")
+    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। যোগাযোগের জিমেইল দেখতে নিচের বাটনে ক্লিক করুন।")
+    show_contact_gmail("admin")
 
     with st.form("admin_login_form"):
         input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
