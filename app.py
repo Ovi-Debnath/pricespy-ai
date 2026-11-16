@@ -342,7 +342,7 @@ def _fetch_via_reader_markdown(url):
 
 
 # =====================================================================
-# MAIN SCRAPER (FIXED TO ENSURE VALID PRICE)
+# MAIN SCRAPER
 # =====================================================================
 def get_competitor_data(url):
     try:
@@ -396,14 +396,13 @@ def get_competitor_data(url):
             if price:
                 return (title or "E-commerce Product"), float(price)
 
-        # যদি কোনোভাবে প্রাইস সরাসরি না পাওয়া যায়, তবে ডিফল্ট একটা প্রাইস বা এরর থ্রো করবে যাতে ০ না দেখায়
         if price is None or price <= 0:
-            raise Exception("Could not extract price. " + " | ".join(errors))
+            price = 0.0
 
         return (title or "E-commerce Product"), float(price)
 
     except Exception as e:
-        raise Exception(f"Failed to scrape URL. Details: {e}")
+        return "E-commerce Product", 0.0
 
 
 # 3. AI Strategy Generator
@@ -569,20 +568,21 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with auto name & price fetching
+# Save new client function with custom product name support
 def save_client_to_github(email, password, product_inputs, plan_name, is_local=False, trx_id=""):
     processed_items = []
     for item in product_inputs:
         raw_url = item.get('url')
         clean_url = clean_daraz_url(raw_url)
         baseline = item.get('baseline_price')
+        custom_name = item.get('product_name') # ক্লায়েন্টের দেওয়া কাস্টম নাম
         
-        p_title = "E-commerce Product"
-        l_price = 0.0
-        try:
+        # যদি ক্লায়েন্ট কাস্টম নাম না দেয়, তবে স্ক্র্যাপ করে নাম বের করবে
+        if not custom_name or not custom_name.strip():
             p_title, l_price = get_competitor_data(clean_url)
-        except Exception:
-            pass
+        else:
+            p_title = custom_name.strip()
+            _, l_price = get_competitor_data(clean_url)
 
         processed_items.append({
             "url": clean_url,
@@ -686,20 +686,21 @@ with tab2:
         with st.form("global_client_form"):
             email = st.text_input("Your Email (used in checkout)")
             password = st.text_input("Create Password (for client portal login)", type="password")
+            p_name_input = st.text_input("Custom Product Name (Optional)", placeholder="e.g., Wireless Earbuds")
             url = st.text_input("Competitor URL to Track", placeholder="Paste competitor product URL here...")
             baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=0.0, step=1.0)
 
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
                 if email and password and url:
                     with st.spinner("Activating 24/7 monitoring..."):
-                        product_items = [{"url": url.strip(), "baseline_price": float(baseline)}]
+                        product_items = [{"url": url.strip(), "product_name": p_name_input.strip(), "baseline_price": float(baseline)}]
                         res = save_client_to_github(email, password, product_items, plan_name="Global Plan", is_local=False)
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please fill in all fields including password.")
+                    st.warning("Please fill in all required fields including password.")
 
     else:
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
@@ -728,10 +729,12 @@ with tab2:
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
             local_pass = st.text_input("Create Password (for client portal login)", type="password")
-            st.markdown(f"**Enter Competitor URLs & Your Baseline Prices (Up to {max_links} products):**")
+            st.markdown(f"**Enter Product Names, Competitor URLs & Baseline Prices (Up to {max_links} products):**")
 
             product_inputs = []
             for idx in range(int(max_links)):
+                st.markdown(f"**Product #{idx+1}**")
+                name_val = st.text_input(f"Custom Product Name #{idx+1}", key=f"name_{max_links}_{idx}", placeholder="e.g., Summer T-Shirt")
                 c1, c2 = st.columns([3, 1])
                 u_val = c1.text_input(
                     f"Product #{idx+1} URL",
@@ -745,18 +748,18 @@ with tab2:
                     step=50.0,
                     key=f"price_{max_links}_{idx}"
                 )
-                product_inputs.append((u_val, p_val))
+                product_inputs.append((name_val, u_val, p_val))
 
             trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
 
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
                 valid_products = [
-                    {"url": u.strip(), "baseline_price": float(p)} 
-                    for u, p in product_inputs if u.strip()
+                    {"product_name": n.strip(), "url": u.strip(), "baseline_price": float(p)} 
+                    for n, u, p in product_inputs if u.strip()
                 ]
 
                 if local_email and local_pass and len(valid_products) > 0 and trx_id:
-                    with st.spinner("Fetching product titles/prices and submitting payment..."):
+                    with st.spinner("Processing products and submitting payment..."):
                         formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
                         res = save_client_to_github(
                             formatted_email,
@@ -775,7 +778,7 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলো এডিট/ডিলিট করুন অথবা নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলোর নাম, ইউআরএল বা বেসলাইন এডিট/ডিলিট করুন অথবা নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
 
     login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
     login_pass = st.text_input("Password", type="password", key="login_pass_field")
@@ -811,7 +814,7 @@ with tab4:
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
 
-        # ১. বর্তমান প্রোডাক্ট ম্যানেজ (Update & Delete) ফর্ম
+        # ১. বর্তমান প্রোডাক্ট ম্যানেজ (Update Custom Name, URL & Baseline) ফর্ম
         st.write("#### 📝 Manage Your Existing Tracked Products (Update / Delete):")
         current_products = client_obj.get("products", [])
 
@@ -821,25 +824,25 @@ with tab4:
             with st.form("update_existing_products_form"):
                 updated_products_list = []
                 for p_idx, prod in enumerate(current_products):
-                    st.markdown(f"**Product #{p_idx+1}: {prod.get('product_name')}** (Live: ৳{prod.get('live_price', 0.0):,.2f})")
+                    st.markdown(f"**Product #{p_idx+1}** (Live Price: ৳{prod.get('live_price', 0.0):,.2f})")
+                    
+                    new_name = st.text_input(f"Product Name #{p_idx+1}", value=prod.get("product_name", ""), key=f"portal_edit_name_{p_idx}")
                     col_u, col_p, col_d = st.columns([3, 1, 1])
                     new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"portal_edit_url_{p_idx}")
                     new_b = col_p.number_input(f"Baseline #{p_idx+1}", value=float(prod.get("baseline_price", 0.0)), step=50.0, key=f"portal_edit_base_{p_idx}")
                     keep_it = col_d.checkbox("Keep", value=True, key=f"portal_edit_keep_{p_idx}")
 
                     if keep_it and new_u.strip():
-                        # আগের নাম ও লাইভ প্রাইস ঠিক রাখা বা নতুন ইউআরএল হলে রিফ্রেশ করা
-                        p_name = prod.get('product_name', 'Product')
                         l_pr = prod.get('live_price', 0.0)
                         if new_u.strip() != prod.get("url"):
                             try:
-                                p_name, l_pr = get_competitor_data(new_u.strip())
+                                _, l_pr = get_competitor_data(new_u.strip())
                             except Exception:
                                 pass
 
                         updated_products_list.append({
                             "url": clean_daraz_url(new_u.strip()),
-                            "product_name": p_name,
+                            "product_name": new_name.strip() if new_name.strip() else prod.get('product_name', 'Product'),
                             "live_price": l_pr,
                             "baseline_price": float(new_b)
                         })
@@ -867,7 +870,7 @@ with tab4:
         st.markdown("---")
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
         
-        # ২. নতুন ইউআরএল যোগ করার ফর্ম (Add New URLs)
+        # ২. নতুন ইউআরএল ও কাস্টম নাম যোগ করার ফর্ম (Add New URLs)
         new_max_links = st.number_input(
             "How many new product links do you want to add?", 
             min_value=1, 
@@ -889,10 +892,12 @@ with tab4:
             st.warning("Payment number is not configured yet. Please contact support.")
 
         with st.form("portal_add_new_links_form"):
-            st.markdown(f"**Enter New Competitor URLs & Baseline Prices (Up to {new_max_links} products):**")
+            st.markdown(f"**Enter Custom Names, New URLs & Baseline Prices (Up to {new_max_links} products):**")
 
             new_product_inputs = []
             for idx in range(int(new_max_links)):
+                st.markdown(f"**New Product #{idx+1}**")
+                n_val = st.text_input(f"Custom Product Name #{idx+1}", key=f"portal_name_{new_max_links}_{idx}", placeholder="e.g., Wireless Mouse")
                 c1, c2 = st.columns([3, 1])
                 u_val = c1.text_input(
                     f"New Product #{idx+1} URL",
@@ -906,24 +911,24 @@ with tab4:
                     step=50.0,
                     key=f"portal_price_{new_max_links}_{idx}"
                 )
-                new_product_inputs.append((u_val, p_val))
+                new_product_inputs.append((n_val, u_val, p_val))
 
             new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID) for these links")
 
             if st.form_submit_button("Submit New URLs for Approval"):
                 valid_new_inputs = [
-                    (u.strip(), float(p)) for u, p in new_product_inputs if u.strip()
+                    (n.strip(), u.strip(), float(p)) for n, u, p in new_product_inputs if u.strip()
                 ]
 
                 if len(valid_new_inputs) > 0 and new_trx_id.strip():
-                    with st.spinner("Fetching product titles and submitting..."):
+                    with st.spinner("Processing products and submitting..."):
                         new_items_to_add = []
-                        for u, p in valid_new_inputs:
+                        for n, u, p in valid_new_inputs:
                             clean_u = clean_daraz_url(u)
-                            p_title = "E-commerce Product"
+                            p_title = n if n else "E-commerce Product"
                             l_price = 0.0
                             try:
-                                p_title, l_price = get_competitor_data(clean_u)
+                                _, l_price = get_competitor_data(clean_u)
                             except Exception:
                                 pass
 
@@ -1080,18 +1085,19 @@ with tab3:
                                 raw_u = p_item.get('url')
                                 clean_u = clean_daraz_url(raw_u)
                                 b_price = p_item.get('baseline_price')
+                                cur_name = p_item.get('product_name')
 
                                 try:
-                                    p_title, l_price = get_competitor_data(clean_u)
+                                    _, l_price = get_competitor_data(clean_u)
                                     verified_list.append({
                                         "url": clean_u,
-                                        "title": p_title,
+                                        "title": cur_name,
                                         "baseline_price": b_price,
                                         "live_price": l_price
                                     })
                                     cleaned_products.append({
                                         "url": clean_u,
-                                        "product_name": p_title,
+                                        "product_name": cur_name,
                                         "live_price": l_price,
                                         "baseline_price": b_price
                                     })
