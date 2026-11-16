@@ -3,7 +3,15 @@
         "client_email": "ovidebnath63@gmail.com [Paid Trx: 1]",
         "password": "7788",
         "products": [],
-        "pending_products": [],
+        "pending_products": [
+            {
+                "url": "https://www.daraz.com.bd/products/item-i525343265-s2546608780.html",
+                "product_name": "CURREN Watch for Women All Season Stainless Steel \u2013 9092",
+                "live_price": 1071.0,
+                "baseline_price": 500.0,
+                "trx_id": "1"
+            }
+        ],
         "plan": "Custom Package (1 URLs - 30 Days)",
         "approved": true,
         "trx_id": "1",
