@@ -35,7 +35,7 @@ admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSW
 admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
-# কন্টাক্ট জিমেইল হিসেবে ovidebnath63@gmail.com যুক্ত করা হয়েছে
+# Contact Gmail
 contact_gmail = "ovidebnath63@gmail.com"
 
 if not api_key:
@@ -573,8 +573,8 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with custom product name support
-def save_client_to_github(email, password, product_inputs, plan_name, is_local=False, trx_id=""):
+# Save new client function with payment method support
+def save_client_to_github(email, password, product_inputs, plan_name, is_local=False, trx_id="", payment_method=""):
     processed_items = []
     for item in product_inputs:
         raw_url = item.get('url')
@@ -613,6 +613,7 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
         existing_client['expiry_date'] = expiry_date
         existing_client['approved'] = not is_local
         existing_client['trx_id'] = trx_id
+        existing_client['payment_method'] = payment_method
         existing_client['reminder_sent'] = False
         existing_client['expired_notified'] = False
     else:
@@ -624,6 +625,7 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
             "plan": plan_name,
             "approved": not is_local,
             "trx_id": trx_id,
+            "payment_method": payment_method,
             "created_at": created_date,
             "expiry_date": expiry_date,
             "reminder_sent": False,
@@ -699,7 +701,7 @@ with tab2:
                 if email and password and url:
                     with st.spinner("Activating 24/7 monitoring..."):
                         product_items = [{"url": url.strip(), "product_name": p_name_input.strip(), "baseline_price": float(baseline)}]
-                        res = save_client_to_github(email, password, product_items, plan_name="Global Plan", is_local=False)
+                        res = save_client_to_github(email, password, product_items, plan_name="Global Plan", is_local=False, payment_method="Global (Lemon Squeezy)")
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
@@ -754,7 +756,12 @@ with tab2:
                 )
                 product_inputs.append((name_val, u_val, p_val))
 
-            trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
+            # পেমেন্ট মাধ্যম সিলেক্ট করার জন্য ডপডাউন অপশন (bKash, Nagad, Upay, Rocket)
+            payment_method = st.selectbox(
+                "Select Payment Method",
+                ["bKash", "Nagad", "Upay", "Rocket"]
+            )
+            trx_id = st.text_input("Transaction ID (TrxID)")
 
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
                 valid_products = []
@@ -772,17 +779,18 @@ with tab2:
 
                 if local_email and local_pass and len(valid_products) > 0 and trx_id:
                     with st.spinner("Processing products and submitting payment..."):
-                        formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
+                        formatted_email = f"{local_email} [Paid via {payment_method} - Trx: {trx_id}]"
                         res = save_client_to_github(
                             formatted_email,
                             local_pass,
                             valid_products,
                             plan_name=plan_name,
                             is_local=True,
-                            trx_id=trx_id
+                            trx_id=trx_id,
+                            payment_method=payment_method
                         )
                         if res is True:
-                            st.success(f"✅ Payment submitted with {len(valid_products)} product(s)! Your monitoring bot will be activated shortly.")
+                            st.success(f"✅ Payment submitted via {payment_method} with {len(valid_products)} product(s)! Your monitoring bot will be activated shortly.")
                         else:
                             st.error(f"Error: {res}")
                 else:
@@ -826,6 +834,7 @@ with tab4:
         st.markdown("---")
         st.write(f"### Welcome, `{client_obj['client_email'].split(' [')[0]}`")
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
+        st.write(f"**Payment Method & TrxID:** `{client_obj.get('payment_method', 'N/A')} (Trx: {client_obj.get('trx_id', 'N/A')})`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
 
         st.write("#### 📝 Manage Your Existing Tracked Products (Update / Delete):")
@@ -886,7 +895,7 @@ with tab4:
         if pending_list:
             st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
             for p_idx, p_prod in enumerate(pending_list):
-                st.write(f"- [Pending] **{p_prod.get('product_name')}** (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
+                st.write(f"- [Pending via {p_prod.get('payment_method', 'N/A')}] **{p_prod.get('product_name')}** (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
 
         st.markdown("---")
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
@@ -932,7 +941,12 @@ with tab4:
                 )
                 new_product_inputs.append((n_val, u_val, p_val))
 
-            new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID) for these links")
+            portal_pay_method = st.selectbox(
+                "Select Payment Method for New URLs",
+                ["bKash", "Nagad", "Upay", "Rocket"],
+                key="portal_pay_method_select"
+            )
+            new_trx_id = st.text_input("Transaction ID (TrxID) for these links")
 
             if st.form_submit_button("Submit New URLs for Approval"):
                 valid_new_inputs = []
@@ -961,7 +975,8 @@ with tab4:
                                 "product_name": p_title,
                                 "live_price": l_price,
                                 "baseline_price": p,
-                                "trx_id": new_trx_id.strip()
+                                "trx_id": new_trx_id.strip(),
+                                "payment_method": portal_pay_method
                             })
 
                         all_clients = load_clients_data()
@@ -975,7 +990,7 @@ with tab4:
                             res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
                             
                             if res is True:
-                                st.success(f"✅ Successfully submitted {len(new_items_to_add)} new URL(s)! Waiting for admin approval.")
+                                st.success(f"✅ Successfully submitted {len(new_items_to_add)} new URL(s) via {portal_pay_method}! Waiting for admin approval.")
                                 st.session_state["portal_client"] = all_clients[c_idx]
                             else:
                                 st.error(f"Error: {res}")
@@ -1070,7 +1085,7 @@ with tab3:
                 st.write(f"**Client #{i+1}** — Status: {status_badge}")
                 st.write(f"- **Email / Info:** `{client_item['client_email']}`")
                 st.write(f"- **Plan:** `{client_item.get('plan', 'Standard')}`")
-                st.write(f"- **TrxID:** `{client_item.get('trx_id', 'N/A (Global)')}`")
+                st.write(f"- **Payment Method & TrxID:** `{client_item.get('payment_method', 'N/A')} (Trx: {client_item.get('trx_id', 'N/A')})`")
                 st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
                 
                 products = client_item.get('products', [])
@@ -1086,7 +1101,7 @@ with tab3:
                 if pending_prods:
                     st.warning(f"⏳ **Pending New Products ({len(pending_prods)} links awaiting approval):**")
                     for p_idx, p_item in enumerate(pending_prods):
-                        st.markdown(f"  - [Trx: {p_item.get('trx_id')}] **{p_item.get('product_name')}** — Baseline: `৳{p_item.get('baseline_price')}`")
+                        st.markdown(f"  - [Via {p_item.get('payment_method', 'N/A')} | Trx: {p_item.get('trx_id')}] **{p_item.get('product_name')}** — Baseline: `৳{p_item.get('baseline_price')}`")
                     
                     if st.button(f"Approve Pending New URLs for Client #{i+1}", key=f"app_new_{i}"):
                         with st.spinner("Verifying new URLs before approval..."):
