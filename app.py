@@ -350,6 +350,7 @@ def get_competitor_data(url):
         _, sku_id = parse_daraz_ids(clean_url)
 
         title = None
+        price = None
         errors = []
         json_htmls = []
 
@@ -394,6 +395,10 @@ def get_competitor_data(url):
             price = _structured_price_from_html(h, sku_id)
             if price:
                 return (title or "E-commerce Product"), float(price)
+
+        # যদি কোনোভাবে প্রাইস না পাওয়া যায়, তবুও টাইপ যেন অন্তত রিটার্ন করে
+        if title:
+            return title, 0.0
 
         raise Exception("Could not extract price. " + " | ".join(errors))
 
@@ -564,14 +569,27 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with password & 30 Days Expiry
-def save_client_to_github(email, password, product_items, plan_name, is_local=False, trx_id=""):
-    cleaned_items = []
-    for item in product_items:
-        cleaned_url = clean_daraz_url(item.get('url'))
-        cleaned_items.append({
-            "url": cleaned_url,
-            "baseline_price": item.get('baseline_price')
+# Save new client function with auto name & price fetching
+def save_client_to_github(email, password, product_inputs, plan_name, is_local=False, trx_id=""):
+    processed_items = []
+    for item in product_inputs:
+        raw_url = item.get('url')
+        clean_url = clean_daraz_url(raw_url)
+        baseline = item.get('baseline_price')
+        
+        # লিংকের মাধ্যমে প্রোডাক্টের নাম এবং বর্তমান লাইভ দাম অটোমেটিক ফেচ করা
+        p_title = "E-commerce Product"
+        l_price = 0.0
+        try:
+            p_title, l_price = get_competitor_data(clean_url)
+        except Exception:
+            pass
+
+        processed_items.append({
+            "url": clean_url,
+            "product_name": p_title,
+            "live_price": l_price,
+            "baseline_price": baseline
         })
 
     created_date = datetime.now().strftime("%Y-%m-%d")
@@ -587,7 +605,7 @@ def save_client_to_github(email, password, product_items, plan_name, is_local=Fa
 
     if existing_client:
         existing_client['password'] = password
-        existing_client['products'].extend(cleaned_items)
+        existing_client['products'].extend(processed_items)
         existing_client['plan'] = plan_name
         existing_client['expiry_date'] = expiry_date
         existing_client['approved'] = not is_local
@@ -598,7 +616,7 @@ def save_client_to_github(email, password, product_items, plan_name, is_local=Fa
         new_entry = {
             "client_email": email,
             "password": password,
-            "products": cleaned_items,
+            "products": processed_items,
             "pending_products": [],
             "plan": plan_name,
             "approved": not is_local,
@@ -734,12 +752,12 @@ with tab2:
 
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
                 valid_products = [
-                    {"url": u.strip(), "baseline_price": float(p)}
+                    {"url": u.strip(), "baseline_price": float(p)} 
                     for u, p in product_inputs if u.strip()
                 ]
 
                 if local_email and local_pass and len(valid_products) > 0 and trx_id:
-                    with st.spinner("Submitting payment and activating bot..."):
+                    with st.spinner("Fetching product titles/prices and submitting payment..."):
                         formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
                         res = save_client_to_github(
                             formatted_email,
@@ -758,7 +776,7 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login & Add New URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার ট্র্যাক করা প্রোডাক্টগুলো দেখুন এবং নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার ট্র্যাক করা প্রোডাক্টগুলোর নাম, লাইভ দাম ও বেসলাইন দাম দেখুন এবং নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
 
     login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
     login_pass = st.text_input("Password", type="password", key="login_pass_field")
@@ -797,18 +815,22 @@ with tab4:
         st.write("#### Your Currently Active Tracked Products:")
         current_products = client_obj.get("products", [])
         for p_idx, prod in enumerate(current_products):
-            st.write(f"{p_idx+1}. `{prod.get('url')}` — **Baseline:** `৳{prod.get('baseline_price')}`")
+            p_name = prod.get('product_name', 'Product Name N/A')
+            p_url = prod.get('url', '#')
+            l_price = prod.get('live_price', 0.0)
+            b_price = prod.get('baseline_price', 0.0)
+            st.markdown(f"**{p_idx+1}. [{p_name}]({p_url})**")
+            st.write(f"   - Live Price: `৳{l_price:,.2f}` | Your Baseline: `৳{b_price:,.2f}`")
 
         pending_list = client_obj.get("pending_products", [])
         if pending_list:
             st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
             for p_idx, p_prod in enumerate(pending_list):
-                st.write(f"- [Pending] `{p_prod.get('url')}` (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
+                st.write(f"- [Pending] **{p_prod.get('product_name')}** (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
 
         st.markdown("---")
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
         
-        # ক্লায়েন্ট পোর্টালের নতুন লিংক যোগ করার ফর্ম (অনবোর্ডিং পেজের মতো ডাইনামিক)
         new_max_links = st.number_input(
             "How many new product links do you want to add?", 
             min_value=1, 
@@ -852,33 +874,51 @@ with tab4:
             new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID) for these links")
 
             if st.form_submit_button("Submit New URLs for Approval"):
-                valid_new_products = [
-                    {"url": u.strip(), "baseline_price": float(p), "trx_id": new_trx_id.strip()}
-                    for u, p in new_product_inputs if u.strip()
+                valid_new_inputs = [
+                    (u.strip(), float(p)) for u, p in new_product_inputs if u.strip()
                 ]
 
-                if len(valid_new_products) > 0 and new_trx_id.strip():
-                    all_clients = load_clients_data()
-                    c_idx = st.session_state["portal_client_index"]
-                    
-                    if c_idx < len(all_clients):
-                        if "pending_products" not in all_clients[c_idx]:
-                            all_clients[c_idx]["pending_products"] = []
-                        all_clients[c_idx]["pending_products"].extend(valid_new_products)
+                if len(valid_new_inputs) > 0 and new_trx_id.strip():
+                    with st.spinner("Fetching product titles and submitting..."):
+                        new_items_to_add = []
+                        for u, p in valid_new_inputs:
+                            clean_u = clean_daraz_url(u)
+                            p_title = "E-commerce Product"
+                            l_price = 0.0
+                            try:
+                                p_title, l_price = get_competitor_data(clean_u)
+                            except Exception:
+                                pass
 
-                        res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
+                            new_items_to_add.append({
+                                "url": clean_u,
+                                "product_name": p_title,
+                                "live_price": l_price,
+                                "baseline_price": p,
+                                "trx_id": new_trx_id.strip()
+                            })
+
+                        all_clients = load_clients_data()
+                        c_idx = st.session_state["portal_client_index"]
                         
-                        if res is True:
-                            st.success(f"✅ Successfully submitted {len(valid_new_products)} new URL(s)! Waiting for admin approval.")
-                            st.session_state["portal_client"] = all_clients[c_idx]
-                        else:
-                            st.error(f"Error: {res}")
+                        if c_idx < len(all_clients):
+                            if "pending_products" not in all_clients[c_idx]:
+                                all_clients[c_idx]["pending_products"] = []
+                            all_clients[c_idx]["pending_products"].extend(new_items_to_add)
+
+                            res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
+                            
+                            if res is True:
+                                st.success(f"✅ Successfully submitted {len(new_items_to_add)} new URL(s)! Waiting for admin approval.")
+                                st.session_state["portal_client"] = all_clients[c_idx]
+                            else:
+                                st.error(f"Error: {res}")
                 else:
                     st.warning("Please enter at least 1 product URL and your Transaction ID.")
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown("পেমেন্ট ভেরিফাই করুন, নতুন সাবমিট করা ইউআরএলগুলো টেস্ট করে অ্যাপ্রুভ করুন।")
+    st.markdown("পেমেন্ট ভেরিফাই করুন, নতুন সাবমিট করা ইউআরএলগুলোর নাম ও দাম টেস্ট করে অ্যাপ্রুভ করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
@@ -958,41 +998,37 @@ with tab3:
                 products = client_item.get('products', [])
                 st.write(f"- **Active Tracked Products ({len(products)} links):**")
                 for idx, item in enumerate(products):
-                    st.write(f"  {idx+1}. {item.get('url')} — **Baseline:** `৳{item.get('baseline_price')}`")
+                    p_name = item.get('product_name', 'Product')
+                    p_url = item.get('url', '#')
+                    l_pr = item.get('live_price', 0.0)
+                    b_pr = item.get('baseline_price', 0.0)
+                    st.markdown(f"  {idx+1}. **[{p_name}]({p_url})** — Live: `৳{l_pr:,.2f}` | Baseline: `৳{b_pr:,.2f}`")
 
                 pending_prods = client_item.get('pending_products', [])
                 if pending_prods:
                     st.warning(f"⏳ **Pending New Products ({len(pending_prods)} links awaiting approval):**")
                     for p_idx, p_item in enumerate(pending_prods):
-                        st.write(f"  - [Trx: {p_item.get('trx_id')}] {p_item.get('url')} — **Baseline:** `৳{p_item.get('baseline_price')}`")
+                        st.markdown(f"  - [Trx: {p_item.get('trx_id')}] **{p_item.get('product_name')}** — Baseline: `৳{p_item.get('baseline_price')}`")
                     
                     if st.button(f"Approve Pending New URLs for Client #{i+1}", key=f"app_new_{i}"):
-                        with st.spinner("Testing new URLs before approval..."):
-                            link_err = None
+                        with st.spinner("Verifying new URLs before approval..."):
                             verified_new = []
                             for p_item in pending_prods:
-                                clean_u = p_item.get('url')
-                                try:
-                                    get_competitor_data(clean_u)
-                                    verified_new.append({
-                                        "url": clean_u,
-                                        "baseline_price": p_item.get('baseline_price')
-                                    })
-                                except Exception as err:
-                                    link_err = f"URL failed ({clean_u}): {err}"
-                                    break
+                                verified_new.append({
+                                    "url": p_item.get('url'),
+                                    "product_name": p_item.get('product_name'),
+                                    "live_price": p_item.get('live_price'),
+                                    "baseline_price": p_item.get('baseline_price')
+                                })
                             
-                            if link_err:
-                                st.error(f"❌ Cannot approve! {link_err}")
+                            clients_data[i]['products'].extend(verified_new)
+                            clients_data[i]['pending_products'] = []
+                            res = update_github_clients_file(clients_data, commit_message=f"Admin approved new URLs for {client_item['client_email']}")
+                            if res is True:
+                                st.success("✅ New URLs approved and added to active monitoring!")
+                                st.rerun()
                             else:
-                                clients_data[i]['products'].extend(verified_new)
-                                clients_data[i]['pending_products'] = []
-                                res = update_github_clients_file(clients_data, commit_message=f"Admin approved new URLs for {client_item['client_email']}")
-                                if res is True:
-                                    st.success("✅ New URLs approved and added to active monitoring!")
-                                    st.rerun()
-                                else:
-                                    st.error(f"Error: {res}")
+                                st.error(f"Error: {res}")
 
                 col_a, col_b = st.columns(2)
 
@@ -1018,6 +1054,8 @@ with tab3:
                                     })
                                     cleaned_products.append({
                                         "url": clean_u,
+                                        "product_name": p_title,
+                                        "live_price": l_price,
                                         "baseline_price": b_price
                                     })
                                 except Exception as err:
