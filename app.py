@@ -544,6 +544,26 @@ def send_activation_email(to_email, verified_items_list):
         return False, str(e)
 
 
+# 7. Function to send Expiry / Reminder Emails
+def send_notification_email(to_email, subject, body):
+    clean_email = to_email.split(" [")[0].strip()
+    if not sender_email or not sender_password:
+        return False, "Sender email credentials missing."
+    
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = clean_email
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        return True, "Notification sent"
+    except Exception as e:
+        return False, str(e)
+
+
 # Save new client function with auto URL cleaning & Expiry Date (30 Days)
 def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
     cleaned_items = []
@@ -554,7 +574,6 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
             "baseline_price": item.get('baseline_price')
         })
 
-    # বর্তমান তারিখ এবং ৩০ দিন পরের এক্সপায়ারি ডেট হিসাব করা
     created_date = datetime.now().strftime("%Y-%m-%d")
     expiry_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -566,7 +585,9 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
         "approved": not is_local,
         "trx_id": trx_id,
         "created_at": created_date,
-        "expiry_date": expiry_date
+        "expiry_date": expiry_date,
+        "reminder_sent": False,
+        "expired_notified": False
     }
     clients.append(new_entry)
     res = update_github_clients_file(clients, commit_message=f"Add client monitoring for {email}")
@@ -714,7 +735,7 @@ with tab2:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("পেমেন্ট ভেরিফাই করুন এবং এক্সপায়ারি ডেট অনুযায়ী স্ট্যাটাস অটো-চেক করুন।")
+    st.markdown("পেমেন্ট ভেরিফাই করুন, মেয়াদ চেক করুন এবং রিমাইন্ডার ইমেইল ম্যানেজ করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
@@ -725,19 +746,50 @@ with tab3:
 
         try:
             clients_data = load_clients_data()
-            today_str = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now()
+            today_str = today.strftime("%Y-%m-%d")
             
-            # অটোমেটিক এক্সপায়ারি চেক এবং স্ট্যাটাস আপডেট
             data_updated = False
             for client_item in clients_data:
                 expiry = client_item.get("expiry_date")
-                if expiry and today_str > expiry:
-                    if client_item.get("approved", True):
-                        client_item["approved"] = False
+                if expiry:
+                    expiry_date_obj = datetime.strptime(expiry, "%Y-%m-%d")
+                    delta_days = (expiry_date_obj - today).days
+
+                    # ১. যদি মেয়াদ শেষ হওয়ার ঠিক ৩ দিন বাকি থাকে এবং রিমাইন্ডার না পাঠানো হয়ে থাকে
+                    if 0 <= delta_days <= 3 and not client_item.get("reminder_sent", False):
+                        sub = "⚠️ Your PriceSpy AI Subscription is Expiring Soon!"
+                        body = (
+                            f"Hello,\n\n"
+                            f"Your 30-day competitor price monitoring subscription is expiring on {expiry}. "
+                            f"Please renew your subscription soon to avoid any interruption in tracking your competitor prices.\n\n"
+                            f"Thank you for using PriceSpy AI!"
+                        )
+                        send_notification_email(client_item['client_email'], sub, body)
+                        client_item["reminder_sent"] = True
                         data_updated = True
 
+                    # ২. যদি মেয়াদ শেষ হয়ে যায়
+                    if today_str > expiry:
+                        if client_item.get("approved", True):
+                            client_item["approved"] = False
+                            data_updated = True
+
+                        # এক্সপায়ারি নোটিফিকেশন একবার পাঠানোর জন্য
+                        if not client_item.get("expired_notified", False):
+                            sub = "❌ Your PriceSpy AI Subscription Has Expired"
+                            body = (
+                                f"Hello,\n\n"
+                                f"Your PriceSpy AI monitoring subscription has expired on {expiry}. "
+                                f"Your automated monitoring bot has been temporarily paused. Please contact support or renew your package to restart tracking.\n\n"
+                                f"Thank you!"
+                            )
+                            send_notification_email(client_item['client_email'], sub, body)
+                            client_item["expired_notified"] = True
+                            data_updated = True
+
             if data_updated:
-                update_github_clients_file(clients_data, commit_message="Auto-expire outdated client subscriptions")
+                update_github_clients_file(clients_data, commit_message="Auto-expire subscriptions and send notification emails")
 
             st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
 
@@ -803,9 +855,11 @@ with tab3:
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
-                                # রিনিউ করার সময় নতুন করে আবার ৩০ দিনের মেয়াদ বাড়িয়ে দেওয়া
+                                # রিনিউ করার সময় নতুন করে ৩০ দিনের মেয়াদ এবং ফ্লাগ রিসেট করা
                                 clients_data[i]["created_at"] = datetime.now().strftime("%Y-%m-%d")
                                 clients_data[i]["expiry_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                clients_data[i]["reminder_sent"] = False
+                                clients_data[i]["expired_notified"] = False
                                 
                                 res = update_github_clients_file(clients_data, commit_message=f"Approve/Renew client {client_item['client_email']}")
 
