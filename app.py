@@ -741,22 +741,29 @@ with tab2:
                     key=f"url_{max_links}_{idx}",
                     placeholder="https://www.daraz.com.bd/products/..."
                 )
-                p_val = c2.number_input(
+                p_val = c2.text_input(
                     f"Baseline (৳)",
-                    min_value=0.0,
-                    value=0.0,
-                    step=50.0,
-                    key=f"price_{max_links}_{idx}"
+                    value="",
+                    key=f"price_{max_links}_{idx}",
+                    placeholder="e.g., 1500"
                 )
                 product_inputs.append((name_val, u_val, p_val))
 
             trx_id = st.text_input("bKash / Nagad Transaction ID (TrxID)")
 
             if st.form_submit_button("Submit Payment & Activate Bot", use_container_width=True):
-                valid_products = [
-                    {"product_name": n.strip(), "url": u.strip(), "baseline_price": float(p)} 
-                    for n, u, p in product_inputs if u.strip()
-                ]
+                valid_products = []
+                for n, u, p in product_inputs:
+                    if u.strip():
+                        try:
+                            clean_p = float(str(p).replace(",", "").strip()) if str(p).strip() else 0.0
+                        except ValueError:
+                            clean_p = 0.0
+                        valid_products.append({
+                            "product_name": n.strip(),
+                            "url": u.strip(),
+                            "baseline_price": clean_p
+                        })
 
                 if local_email and local_pass and len(valid_products) > 0 and trx_id:
                     with st.spinner("Processing products and submitting payment..."):
@@ -830,7 +837,12 @@ with tab4:
                     new_name = st.text_input(f"Product Name #{p_idx+1}", value=prod.get("product_name", ""), key=f"portal_edit_name_{p_idx}")
                     col_u, col_p, col_d = st.columns([3, 1, 1])
                     new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"portal_edit_url_{p_idx}")
-                    new_b = col_p.number_input(f"Baseline #{p_idx+1}", value=float(prod.get("baseline_price", 0.0)), step=50.0, key=f"portal_edit_base_{p_idx}")
+                    
+                    # বেসলাইন প্রাইস ফিল্ডটিকে text_input করা হয়েছে যাতে 0.00 বা অটো টিউনিং না থাকে
+                    existing_base = prod.get("baseline_price", 0.0)
+                    base_val_str = str(int(existing_base)) if existing_base and float(existing_base) > 0 else ""
+                    new_b_str = col_p.text_input(f"Baseline #{p_idx+1}", value=base_val_str, key=f"portal_edit_base_{p_idx}", placeholder="e.g. 1500")
+                    
                     keep_it = col_d.checkbox("Keep", value=True, key=f"portal_edit_keep_{p_idx}")
 
                     if keep_it and new_u.strip():
@@ -841,11 +853,16 @@ with tab4:
                             except Exception:
                                 pass
 
+                        try:
+                            clean_b_val = float(str(new_b_str).replace(",", "").strip()) if str(new_b_str).strip() else 0.0
+                        except ValueError:
+                            clean_b_val = 0.0
+
                         updated_products_list.append({
                             "url": clean_daraz_url(new_u.strip()),
                             "product_name": new_name.strip() if new_name.strip() else prod.get('product_name', 'Product'),
                             "live_price": l_pr,
-                            "baseline_price": float(new_b)
+                            "baseline_price": clean_b_val
                         })
 
                 if st.form_submit_button("Save Changes / Delete Unchecked"):
@@ -903,21 +920,25 @@ with tab4:
                     key=f"portal_url_{new_max_links}_{idx}",
                     placeholder="https://www.daraz.com.bd/products/..."
                 )
-                p_val = c2.number_input(
+                p_val = c2.text_input(
                     f"Baseline (৳)",
-                    min_value=0.0,
-                    value=0.0,
-                    step=50.0,
-                    key=f"portal_price_{new_max_links}_{idx}"
+                    value="",
+                    key=f"portal_price_{new_max_links}_{idx}",
+                    placeholder="e.g. 1500"
                 )
                 new_product_inputs.append((n_val, u_val, p_val))
 
             new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID) for these links")
 
             if st.form_submit_button("Submit New URLs for Approval"):
-                valid_new_inputs = [
-                    (n.strip(), u.strip(), float(p)) for n, u, p in new_product_inputs if u.strip()
-                ]
+                valid_new_inputs = []
+                for n, u, p in new_product_inputs:
+                    if u.strip():
+                        try:
+                            clean_p = float(str(p).replace(",", "").strip()) if str(p).strip() else 0.0
+                        except ValueError:
+                            clean_p = 0.0
+                        valid_new_inputs.append((n.strip(), u.strip(), clean_p))
 
                 if len(valid_new_inputs) > 0 and new_trx_id.strip():
                     with st.spinner("Processing products and submitting..."):
