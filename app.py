@@ -35,6 +35,9 @@ admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSW
 admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
+# কন্টাক্ট জিমেইল হিসেবে ovidebnath63@gmail.com যুক্ত করা হয়েছে
+contact_gmail = "ovidebnath63@gmail.com"
+
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
     st.stop()
@@ -532,6 +535,7 @@ def send_activation_email(to_email, verified_items_list):
         f"Your payment has been successfully verified, and our system has successfully tested your product links. Your 24/7 competitor price monitoring bot is now LIVE!\n\n"
         f"Tracked Products & Verified Status:\n{items_str}\n"
         f"Our bot will check competitor prices regularly and send AI-driven strategic alerts directly to this inbox whenever a price change occurs.\n\n"
+        f"If you need any support, contact us at: {contact_gmail}\n\n"
         f"Thank you for using PriceSpy AI!"
     )
 
@@ -665,6 +669,7 @@ with tab1:
 
 with tab2:
     st.subheader("🚀 Register & Activate 24/7 Monitoring")
+    st.markdown(f"For any queries or support, please contact us at: **{contact_gmail}**")
     st.markdown("Choose your region and package to complete subscription and activate automated tracking.")
 
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
@@ -785,7 +790,7 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন (পাসওয়ার্ড লিখে কিবোর্ডের **Enter** চাপলেই লগইন হয়ে যাবে)।")
+    st.markdown(f"আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। কোনো সমস্যায় যোগাযোগ করুন: **{contact_gmail}**")
 
     with st.form("client_login_form"):
         login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
@@ -838,7 +843,6 @@ with tab4:
                     col_u, col_p, col_d = st.columns([3, 1, 1])
                     new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"portal_edit_url_{p_idx}")
                     
-                    # বেসলাইন প্রাইস ফিল্ডটিকে text_input করা হয়েছে যাতে 0.00 বা অটো টিউনিং না থাকে
                     existing_base = prod.get("baseline_price", 0.0)
                     base_val_str = str(int(existing_base)) if existing_base and float(existing_base) > 0 else ""
                     new_b_str = col_p.text_input(f"Baseline #{p_idx+1}", value=base_val_str, key=f"portal_edit_base_{p_idx}", placeholder="e.g. 1500")
@@ -980,7 +984,7 @@ with tab4:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন।")
+    st.markdown(f"অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। যোগাযোগ: **{contact_gmail}**")
 
     with st.form("admin_login_form"):
         input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
@@ -1018,6 +1022,7 @@ with tab3:
                             f"Hello,\n\n"
                             f"Your 30-day competitor price monitoring subscription is expiring on {expiry}. "
                             f"Please renew your subscription soon to avoid any interruption in tracking your competitor prices.\n\n"
+                            f"For support, contact us at: {contact_gmail}\n\n"
                             f"Thank you for using PriceSpy AI!"
                         )
                         send_notification_email(client_item['client_email'], sub, body)
@@ -1034,7 +1039,7 @@ with tab3:
                             body = (
                                 f"Hello,\n\n"
                                 f"Your PriceSpy AI monitoring subscription has expired on {expiry}. "
-                                f"Your automated monitoring bot has been temporarily paused. Please contact support or renew your package to restart tracking.\n\n"
+                                f"Your automated monitoring bot has been temporarily paused. Please contact support at {contact_gmail} or renew your package to restart tracking.\n\n"
                                 f"Thank you!"
                             )
                             send_notification_email(client_item['client_email'], sub, body)
@@ -1137,7 +1142,7 @@ with tab3:
                                     break
 
                             if link_error:
-                                st.error("❌ Cannot approve! " + str(link_error) + ". Please ask the client for a valid product URL.")
+                                st.error("❌ Cannot approve! " + str(link_error) + f". Please ask the client or contact support at {contact_gmail}.")
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
