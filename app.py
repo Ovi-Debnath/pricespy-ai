@@ -32,7 +32,7 @@ github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 sender_email = st.secrets.get("SENDER_EMAIL") or os.environ.get("SENDER_EMAIL")
 sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PASSWORD")
 admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD")
-admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email # অ্যাডমিন জিমেইল সিক্রেট বা সেন্ডার ইমেইল থেকে নিবে
+admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
 if not api_key:
@@ -780,7 +780,6 @@ with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
     st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন (পাসওয়ার্ড লিখে কিবোর্ডের **Enter** চাপলেই লগইন হয়ে যাবে)।")
 
-    # ক্লায়েন্ট লগইন ফর্ম (কিবোর্ডের Enter প্রেস করে লগইন করার সুবিধা সহ)
     with st.form("client_login_form"):
         login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
         login_pass = st.text_input("Password", type="password", key="login_pass_field")
@@ -962,14 +961,12 @@ with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
     st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন।")
 
-    # অ্যাডমিন প্যানেল লগইন ফর্ম (জিমেইল এবং পাসওয়ার্ড ভেরিফিকেশন সহ)
     with st.form("admin_login_form"):
         input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
         input_admin_pass = st.text_input("Admin Password", type="password")
         admin_login_submit = st.form_submit_button("Access Admin Panel", type="primary")
 
     if admin_login_submit:
-        # জিমেইল এবং পাসওয়ার্ড উভয়ই সঠিক হতে হবে
         is_gmail_valid = hmac.compare_digest(input_admin_gmail.strip().lower(), str(admin_gmail).strip().lower())
         is_pass_valid = hmac.compare_digest(input_admin_pass.encode("utf-8"), str(admin_password).encode("utf-8"))
 
@@ -1119,7 +1116,7 @@ with tab3:
                                     break
 
                             if link_error:
-                                st.error(f`❌ Cannot approve! {link_error}. Please ask the client for a valid product URL.`)
+                                st.error("❌ Cannot approve! " + str(link_error) + ". Please ask the client for a valid product URL.")
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
