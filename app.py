@@ -25,7 +25,7 @@ st.set_page_config(
 st.title("🕵️‍♂️ PriceSpy AI: Automated B2B Competitor Price Monitor")
 st.markdown("Monitor your competitors 24/7 and get AI-driven counter-strategy alerts instantly.")
 
-# 1. API & GitHub & Email Configuration
+# 1. API & GitHub & Email & Contact Gmail Configuration
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 github_token = st.secrets.get("GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
@@ -35,8 +35,8 @@ admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSW
 admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
-# Contact Gmail
-contact_gmail = "ovidebnath63@gmail.com"
+# Contact Gmail এখন st.secrets থেকে রিড করবে (সিক্রেট হিসেবে নিরাপদ থাকবে)
+contact_gmail = st.secrets.get("CONTACT_GMAIL") or "ovidebnath63@gmail.com"
 
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
