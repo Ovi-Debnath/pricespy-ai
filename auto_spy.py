@@ -2,17 +2,20 @@ import os
 import json
 import time
 import base64
+import re
+import html as html_lib
 import smtplib
 from email.mime.text import MIMEText
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 from google import genai
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
-GITHUB_REPO = os.environ.get("GITHUB_REPO")
+GITHUB_TOKEN = os.environ.get("PRICESPY_DATA_TOKEN")
+GITHUB_REPO = os.environ.get("PRICESPY_DATA_REPO")
 CONTACT_GMAIL = os.environ.get("CONTACT_GMAIL") or "ovidebnath63@gmail.com"
 
 # Load clients from private clients.json (Supports GitHub API for Private Repos & Local fallback)
