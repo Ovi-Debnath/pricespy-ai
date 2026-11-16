@@ -658,6 +658,7 @@ tab1, tab2, tab4, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Clien
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
+    show_contact_gmail("instant")
     target_url = st.text_input(
         "Competitor Product URL",
         value="",
@@ -1021,8 +1022,7 @@ with tab4:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। যোগাযোগের জিমেইল দেখতে নিচের বাটনে ক্লিক করুন।")
-    show_contact_gmail("admin")
+    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন।")
 
     with st.form("admin_login_form"):
         input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
