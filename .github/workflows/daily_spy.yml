@@ -23,8 +23,8 @@ jobs:
       - name: Run Price Spy Automation
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.PRICESPY_DATA_TOKEN }}
-          GITHUB_REPO: ${{ secrets.PRICESPY_DATA_REPO }}
+          PRICESPY_DATA_TOKEN: ${{ secrets.PRICESPY_DATA_TOKEN }}
+          PRICESPY_DATA_REPO: ${{ secrets.PRICESPY_DATA_REPO }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           CONTACT_GMAIL: ${{ secrets.CONTACT_GMAIL }}
