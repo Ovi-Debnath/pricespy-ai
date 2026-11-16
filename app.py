@@ -8,6 +8,7 @@ import html as html_lib
 import smtplib
 from email.mime.text import MIMEText
 from urllib.parse import urlparse
+from datetime import datetime, timedelta
 import streamlit as st
 import requests
 import cloudscraper
@@ -44,7 +45,6 @@ client = genai.Client(api_key=api_key)
 # DARAZ URL CLEANER
 # =====================================================================
 def parse_daraz_ids(url):
-    """URL-এর path থেকে (item_id, sku_id) বের করে। query অংশ দেখে না।"""
     try:
         path = urlparse(str(url).strip()).path
     except Exception:
@@ -544,7 +544,7 @@ def send_activation_email(to_email, verified_items_list):
         return False, str(e)
 
 
-# Save new client function with auto URL cleaning
+# Save new client function with auto URL cleaning & Expiry Date (30 Days)
 def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
     cleaned_items = []
     for item in product_items:
@@ -554,13 +554,19 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
             "baseline_price": item.get('baseline_price')
         })
 
+    # বর্তমান তারিখ এবং ৩০ দিন পরের এক্সপায়ারি ডেট হিসাব করা
+    created_date = datetime.now().strftime("%Y-%m-%d")
+    expiry_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+
     clients = load_clients_data()
     new_entry = {
         "client_email": email,
         "products": cleaned_items,
         "plan": plan_name,
         "approved": not is_local,
-        "trx_id": trx_id
+        "trx_id": trx_id,
+        "created_at": created_date,
+        "expiry_date": expiry_date
     }
     clients.append(new_entry)
     res = update_github_clients_file(clients, commit_message=f"Add client monitoring for {email}")
@@ -637,9 +643,8 @@ with tab2:
                     st.warning("Please fill in all fields.")
 
     else:
-        st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link)")
+        st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
         
-        # ড্রপডাউনের বদলে এখন ইউজার নিজের ইচ্ছামতো ১ থেকে ১০০ পর্যন্ত সংখ্যা দিতে পারবেন
         max_links = st.number_input(
             "How many product links do you want to monitor?", 
             min_value=1, 
@@ -648,11 +653,10 @@ with tab2:
             step=1
         )
         
-        # প্রতি লিংকের দাম ১২৫০ টাকা ধরে মোট খরচ হিসাব করা
         total_cost = max_links * 1250
-        plan_name = f"Custom Package ({max_links} URLs)"
+        plan_name = f"Custom Package ({max_links} URLs - 30 Days)"
         
-        st.info(f"📌 Total Links: **{max_links}** | Total Price to Pay: **৳{total_cost:,}** (৳1,250 per link)")
+        st.info(f"📌 Total Links: **{max_links}** | Total Price: **৳{total_cost:,}** (৳1,250/link for 30 days)")
 
         if payment_number:
             if st.button("📲 Show Payment Number"):
@@ -710,17 +714,31 @@ with tab2:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("Admin password দিয়ে পেমেন্ট ভেরিফাই করুন এবং লিংক টেস্ট করে অ্যাক্টিভ করুন।")
+    st.markdown("পেমেন্ট ভেরিফাই করুন এবং এক্সপায়ারি ডেট অনুযায়ী স্ট্যাটাস অটো-চেক করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
-    if not admin_password:
-        st.error("⚠️ ADMIN_PASSWORD is not configured! Please add it in Streamlit Secrets.")
+    if not admin_pass:
+        pass
     elif admin_pass and hmac.compare_digest(admin_pass.encode("utf-8"), str(admin_password).encode("utf-8")):
         st.success("Access Granted!")
 
         try:
             clients_data = load_clients_data()
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            
+            # অটোমেটিক এক্সপায়ারি চেক এবং স্ট্যাটাস আপডেট
+            data_updated = False
+            for client_item in clients_data:
+                expiry = client_item.get("expiry_date")
+                if expiry and today_str > expiry:
+                    if client_item.get("approved", True):
+                        client_item["approved"] = False
+                        data_updated = True
+
+            if data_updated:
+                update_github_clients_file(clients_data, commit_message="Auto-expire outdated client subscriptions")
+
             st.write(f"Total Active/Pending Monitors: **{len(clients_data)}**")
 
             if len(clients_data) == 0:
@@ -728,11 +746,22 @@ with tab3:
 
             for i, client_item in enumerate(clients_data):
                 st.markdown("---")
-                status_badge = "🟢 Approved" if client_item.get("approved", True) else "🟡 Pending Payment"
+                
+                expiry = client_item.get("expiry_date", "N/A")
+                is_expired = expiry != "N/A" and today_str > expiry
+
+                if is_expired:
+                    status_badge = "🔴 Expired (Deactivated)"
+                elif client_item.get("approved", True):
+                    status_badge = "🟢 Approved & Active"
+                else:
+                    status_badge = "🟡 Pending Payment"
+
                 st.write(f"**Client #{i+1}** — Status: {status_badge}")
                 st.write(f"- **Email / Info:** `{client_item['client_email']}`")
                 st.write(f"- **Plan:** `{client_item.get('plan', 'Standard')}`")
                 st.write(f"- **TrxID:** `{client_item.get('trx_id', 'N/A (Global)')}`")
+                st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
                 st.write(f"- **Tracked Products:**")
 
                 products = client_item.get('products', [])
@@ -741,9 +770,9 @@ with tab3:
 
                 col_a, col_b = st.columns(2)
 
-                if not client_item.get("approved", True):
-                    if col_a.button(f"Approve Payment #{i+1}", key=f"app_{i}"):
-                        with st.spinner("Cleaning URLs, testing live prices before approval..."):
+                if not client_item.get("approved", True) or is_expired:
+                    if col_a.button(f"Approve / Renew #{i+1}", key=f"app_{i}"):
+                        with st.spinner("Cleaning URLs, testing live prices and resetting 30-day expiry..."):
                             verified_list = []
                             link_error = None
 
@@ -774,14 +803,18 @@ with tab3:
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
-                                res = update_github_clients_file(clients_data, commit_message=f"Approve client {client_item['client_email']}")
+                                # রিনিউ করার সময় নতুন করে আবার ৩০ দিনের মেয়াদ বাড়িয়ে দেওয়া
+                                clients_data[i]["created_at"] = datetime.now().strftime("%Y-%m-%d")
+                                clients_data[i]["expiry_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                
+                                res = update_github_clients_file(clients_data, commit_message=f"Approve/Renew client {client_item['client_email']}")
 
                                 if res is True:
                                     mail_sent, mail_msg = send_activation_email(client_item['client_email'], verified_list)
                                     if mail_sent:
-                                        st.success(f"Client #{i+1} approved! URLs auto-cleaned, tested, and activation email sent successfully!")
+                                        st.success(f"Client #{i+1} approved/renewed for another 30 days and email sent successfully!")
                                     else:
-                                        st.warning(f"Client approved and saved, but email failed: {mail_msg}")
+                                        st.warning(f"Client approved, but email failed: {mail_msg}")
                                     st.rerun()
                                 else:
                                     st.error(f"Failed to sync with GitHub: {res}")
