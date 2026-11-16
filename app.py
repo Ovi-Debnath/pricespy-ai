@@ -342,7 +342,7 @@ def _fetch_via_reader_markdown(url):
 
 
 # =====================================================================
-# MAIN SCRAPER
+# MAIN SCRAPER (FIXED TO ENSURE VALID PRICE)
 # =====================================================================
 def get_competitor_data(url):
     try:
@@ -396,11 +396,11 @@ def get_competitor_data(url):
             if price:
                 return (title or "E-commerce Product"), float(price)
 
-        # যদি কোনোভাবে প্রাইস না পাওয়া যায়, তবুও টাইপ যেন অন্তত রিটার্ন করে
-        if title:
-            return title, 0.0
+        # যদি কোনোভাবে প্রাইস সরাসরি না পাওয়া যায়, তবে ডিফল্ট একটা প্রাইস বা এরর থ্রো করবে যাতে ০ না দেখায়
+        if price is None or price <= 0:
+            raise Exception("Could not extract price. " + " | ".join(errors))
 
-        raise Exception("Could not extract price. " + " | ".join(errors))
+        return (title or "E-commerce Product"), float(price)
 
     except Exception as e:
         raise Exception(f"Failed to scrape URL. Details: {e}")
@@ -577,7 +577,6 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
         clean_url = clean_daraz_url(raw_url)
         baseline = item.get('baseline_price')
         
-        # লিংকের মাধ্যমে প্রোডাক্টের নাম এবং বর্তমান লাইভ দাম অটোমেটিক ফেচ করা
         p_title = "E-commerce Product"
         l_price = 0.0
         try:
@@ -654,7 +653,7 @@ with tab1:
 
                     col1, col2 = st.columns(2)
                     col1.metric("Product Title", title)
-                    col2.metric("Competitor Live Price", f"{live_price:.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline" if user_baseline > 0 else "Live Price")
+                    col2.metric("Competitor Live Price", f"{live_price:,.2f}", delta=f"{live_price - user_baseline:.2f} vs Baseline" if user_baseline > 0 else "Live Price")
 
                     st.markdown("---")
                     st.subheader("🤖 AI Counter-Strategy")
@@ -775,8 +774,8 @@ with tab2:
                     st.warning("Please enter your email, password, at least 1 product URL, and your Transaction ID.")
 
 with tab4:
-    st.subheader("👤 Client Portal: Secure Login & Add New URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার ট্র্যাক করা প্রোডাক্টগুলোর নাম, লাইভ দাম ও বেসলাইন দাম দেখুন এবং নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
+    st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলো এডিট/ডিলিট করুন অথবা নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
 
     login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
     login_pass = st.text_input("Password", type="password", key="login_pass_field")
@@ -812,16 +811,53 @@ with tab4:
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
 
-        st.write("#### Your Currently Active Tracked Products:")
+        # ১. বর্তমান প্রোডাক্ট ম্যানেজ (Update & Delete) ফর্ম
+        st.write("#### 📝 Manage Your Existing Tracked Products (Update / Delete):")
         current_products = client_obj.get("products", [])
-        for p_idx, prod in enumerate(current_products):
-            p_name = prod.get('product_name', 'Product Name N/A')
-            p_url = prod.get('url', '#')
-            l_price = prod.get('live_price', 0.0)
-            b_price = prod.get('baseline_price', 0.0)
-            st.markdown(f"**{p_idx+1}. [{p_name}]({p_url})**")
-            st.write(f"   - Live Price: `৳{l_price:,.2f}` | Your Baseline: `৳{b_price:,.2f}`")
 
+        if not current_products:
+            st.info("No active products found.")
+        else:
+            with st.form("update_existing_products_form"):
+                updated_products_list = []
+                for p_idx, prod in enumerate(current_products):
+                    st.markdown(f"**Product #{p_idx+1}: {prod.get('product_name')}** (Live: ৳{prod.get('live_price', 0.0):,.2f})")
+                    col_u, col_p, col_d = st.columns([3, 1, 1])
+                    new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"portal_edit_url_{p_idx}")
+                    new_b = col_p.number_input(f"Baseline #{p_idx+1}", value=float(prod.get("baseline_price", 0.0)), step=50.0, key=f"portal_edit_base_{p_idx}")
+                    keep_it = col_d.checkbox("Keep", value=True, key=f"portal_edit_keep_{p_idx}")
+
+                    if keep_it and new_u.strip():
+                        # আগের নাম ও লাইভ প্রাইস ঠিক রাখা বা নতুন ইউআরএল হলে রিফ্রেশ করা
+                        p_name = prod.get('product_name', 'Product')
+                        l_pr = prod.get('live_price', 0.0)
+                        if new_u.strip() != prod.get("url"):
+                            try:
+                                p_name, l_pr = get_competitor_data(new_u.strip())
+                            except Exception:
+                                pass
+
+                        updated_products_list.append({
+                            "url": clean_daraz_url(new_u.strip()),
+                            "product_name": p_name,
+                            "live_price": l_pr,
+                            "baseline_price": float(new_b)
+                        })
+
+                if st.form_submit_button("Save Changes / Delete Unchecked"):
+                    all_clients = load_clients_data()
+                    c_idx = st.session_state["portal_client_index"]
+                    if c_idx < len(all_clients):
+                        all_clients[c_idx]["products"] = updated_products_list
+                        res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} updated/deleted products")
+                        if res is True:
+                            st.success("✅ Products updated successfully!")
+                            st.session_state["portal_client"] = all_clients[c_idx]
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {res}")
+
+        # পেন্ডিং প্রোডাক্টস লিস্ট
         pending_list = client_obj.get("pending_products", [])
         if pending_list:
             st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
@@ -831,6 +867,7 @@ with tab4:
         st.markdown("---")
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
         
+        # ২. নতুন ইউআরএল যোগ করার ফর্ম (Add New URLs)
         new_max_links = st.number_input(
             "How many new product links do you want to add?", 
             min_value=1, 
