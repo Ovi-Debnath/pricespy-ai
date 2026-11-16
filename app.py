@@ -32,6 +32,7 @@ github_repo = st.secrets.get("GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 sender_email = st.secrets.get("SENDER_EMAIL") or os.environ.get("SENDER_EMAIL")
 sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PASSWORD")
 admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD")
+admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email # অ্যাডমিন জিমেইল সিক্রেট বা সেন্ডার ইমেইল থেকে নিবে
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
 
 if not api_key:
@@ -575,9 +576,8 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
         raw_url = item.get('url')
         clean_url = clean_daraz_url(raw_url)
         baseline = item.get('baseline_price')
-        custom_name = item.get('product_name') # ক্লায়েন্টের দেওয়া কাস্টম নাম
+        custom_name = item.get('product_name')
         
-        # যদি ক্লায়েন্ট কাস্টম নাম না দেয়, তবে স্ক্র্যাপ করে নাম বের করবে
         if not custom_name or not custom_name.strip():
             p_title, l_price = get_competitor_data(clean_url)
         else:
@@ -778,12 +778,15 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলোর নাম, ইউআরএল বা বেসলাইন এডিট/ডিলিট করুন অথবা নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন (পাসওয়ার্ড লিখে কিবোর্ডের **Enter** চাপলেই লগইন হয়ে যাবে)।")
 
-    login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
-    login_pass = st.text_input("Password", type="password", key="login_pass_field")
+    # ক্লায়েন্ট লগইন ফর্ম (কিবোর্ডের Enter প্রেস করে লগইন করার সুবিধা সহ)
+    with st.form("client_login_form"):
+        login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
+        login_pass = st.text_input("Password", type="password", key="login_pass_field")
+        login_submit = st.form_submit_button("Login to My Portal", type="primary")
 
-    if st.button("Login to My Portal", type="primary"):
+    if login_submit:
         if not login_email or not login_pass:
             st.warning("Please enter both email and password.")
         else:
@@ -814,7 +817,6 @@ with tab4:
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
 
-        # ১. বর্তমান প্রোডাক্ট ম্যানেজ (Update Custom Name, URL & Baseline) ফর্ম
         st.write("#### 📝 Manage Your Existing Tracked Products (Update / Delete):")
         current_products = client_obj.get("products", [])
 
@@ -860,7 +862,6 @@ with tab4:
                         else:
                             st.error(f"Error: {res}")
 
-        # পেন্ডিং প্রোডাক্টস লিস্ট
         pending_list = client_obj.get("pending_products", [])
         if pending_list:
             st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
@@ -870,7 +871,6 @@ with tab4:
         st.markdown("---")
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
         
-        # ২. নতুন ইউআরএল ও কাস্টম নাম যোগ করার ফর্ম (Add New URLs)
         new_max_links = st.number_input(
             "How many new product links do you want to add?", 
             min_value=1, 
@@ -960,13 +960,26 @@ with tab4:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown("পেমেন্ট ভেরিফাই করুন, নতুন সাবমিট করা ইউআরএলগুলোর নাম ও দাম টেস্ট করে অ্যাপ্রুভ করুন।")
+    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন।")
 
-    admin_pass = st.text_input("Admin Password", type="password")
+    # অ্যাডমিন প্যানেল লগইন ফর্ম (জিমেইল এবং পাসওয়ার্ড ভেরিফিকেশন সহ)
+    with st.form("admin_login_form"):
+        input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
+        input_admin_pass = st.text_input("Admin Password", type="password")
+        admin_login_submit = st.form_submit_button("Access Admin Panel", type="primary")
 
-    if not admin_pass:
-        pass
-    elif admin_pass and hmac.compare_digest(admin_pass.encode("utf-8"), str(admin_password).encode("utf-8")):
+    if admin_login_submit:
+        # জিমেইল এবং পাসওয়ার্ড উভয়ই সঠিক হতে হবে
+        is_gmail_valid = hmac.compare_digest(input_admin_gmail.strip().lower(), str(admin_gmail).strip().lower())
+        is_pass_valid = hmac.compare_digest(input_admin_pass.encode("utf-8"), str(admin_password).encode("utf-8"))
+
+        if is_gmail_valid and is_pass_valid:
+            st.session_state["admin_logged_in"] = True
+        else:
+            st.session_state["admin_logged_in"] = False
+            st.error("Incorrect Admin Gmail or Password!")
+
+    if st.session_state.get("admin_logged_in"):
         st.success("Access Granted!")
 
         try:
@@ -1106,7 +1119,7 @@ with tab3:
                                     break
 
                             if link_error:
-                                st.error(f"❌ Cannot approve! {link_error}. Please ask the client for a valid product URL.")
+                                st.error(f`❌ Cannot approve! {link_error}. Please ask the client for a valid product URL.`)
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
@@ -1138,6 +1151,3 @@ with tab3:
 
         except Exception as e:
             st.error(f"Error loading data: {e}")
-
-    elif admin_pass:
-        st.error("Incorrect password!")
