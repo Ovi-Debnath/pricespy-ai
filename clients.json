@@ -34,7 +34,7 @@
         ],
         "pending_products": [],
         "plan": "Custom Package (1 URLs - 30 Days)",
-        "approved": false,
+        "approved": true,
         "trx_id": "222",
         "created_at": "2026-11-16",
         "expiry_date": "2026-12-16",
