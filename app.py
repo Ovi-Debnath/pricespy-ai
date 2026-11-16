@@ -544,7 +544,7 @@ def send_activation_email(to_email, verified_items_list):
         return False, str(e)
 
 
-# 7. Function to send Expiry / Reminder Emails
+# 7. Function to send Notifications
 def send_notification_email(to_email, subject, body):
     clean_email = to_email.split(" [")[0].strip()
     if not sender_email or not sender_password:
@@ -564,8 +564,8 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with auto URL cleaning & Expiry Date (30 Days)
-def save_client_to_github(email, product_items, plan_name, is_local=False, trx_id=""):
+# Save new client function with password & 30 Days Expiry
+def save_client_to_github(email, password, product_items, plan_name, is_local=False, trx_id=""):
     cleaned_items = []
     for item in product_items:
         cleaned_url = clean_daraz_url(item.get('url'))
@@ -579,14 +579,15 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
 
     clients = load_clients_data()
     
-    # যদি একই ইমেইল ইতিপূর্বে থাকে, তবে নতুন প্রোডাক্টগুলো তার সাথে যুক্ত বা আপডেট হবে
     existing_client = None
     for c in clients:
-        if c['client_email'].split(" [")[0].strip().lower() == email.split(" [")[0].strip().lower():
+        if c['client_email'].split(" [")[0].strip().lower() == email.strip().lower():
             existing_client = c
             break
 
     if existing_client:
+        # পাসওয়ার্ড যাচাই বা আপডেট
+        existing_client['password'] = password
         existing_client['products'].extend(cleaned_items)
         existing_client['plan'] = plan_name
         existing_client['expiry_date'] = expiry_date
@@ -597,7 +598,9 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
     else:
         new_entry = {
             "client_email": email,
+            "password": password,
             "products": cleaned_items,
+            "pending_products": [], # নতুন সাবমিট করা লিংক যা অ্যাডমিনের অনুমোদনের অপেক্ষায় থাকবে
             "plan": plan_name,
             "approved": not is_local,
             "trx_id": trx_id,
@@ -666,20 +669,21 @@ with tab2:
         st.markdown("---")
         with st.form("global_client_form"):
             email = st.text_input("Your Email (used in checkout)")
+            password = st.text_input("Create Password (for client portal login)", type="password")
             url = st.text_input("Competitor URL to Track", placeholder="Paste competitor product URL here...")
             baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=0.0, step=1.0)
 
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
-                if email and url:
+                if email and password and url:
                     with st.spinner("Activating 24/7 monitoring..."):
                         product_items = [{"url": url.strip(), "baseline_price": float(baseline)}]
-                        res = save_client_to_github(email, product_items, plan_name="Global Plan", is_local=False)
+                        res = save_client_to_github(email, password, product_items, plan_name="Global Plan", is_local=False)
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please fill in all fields.")
+                    st.warning("Please fill in all fields including password.")
 
     else:
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
@@ -707,6 +711,7 @@ with tab2:
 
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
+            local_pass = st.text_input("Create Password (for client portal login)", type="password")
             st.markdown(f"**Enter Competitor URLs & Your Baseline Prices (Up to {max_links} products):**")
 
             product_inputs = []
@@ -734,11 +739,12 @@ with tab2:
                     for u, p in product_inputs if u.strip()
                 ]
 
-                if local_email and len(valid_products) > 0 and trx_id:
+                if local_email and local_pass and len(valid_products) > 0 and trx_id:
                     with st.spinner("Submitting payment and activating bot..."):
                         formatted_email = f"{local_email} [Paid Trx: {trx_id}]"
                         res = save_client_to_github(
                             formatted_email,
+                            local_pass,
                             valid_products,
                             plan_name=plan_name,
                             is_local=True,
@@ -749,17 +755,18 @@ with tab2:
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please enter your email, at least 1 product URL, and your Transaction ID.")
+                    st.warning("Please enter your email, password, at least 1 product URL, and your Transaction ID.")
 
 with tab4:
-    st.subheader("👤 Client Portal: Manage & Update Your Tracked URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলো দেখুন এবং নতুন ইউআরএল যুক্ত করুন।")
+    st.subheader("👤 Client Portal: Secure Login & Add New URLs")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করে আপনার ট্র্যাক করা প্রোডাক্টগুলো দেখুন এবং নতুন ইউআরএল পেমেন্টসহ সাবমিট করুন।")
 
-    portal_email = st.text_input("Enter Your Registered Email", placeholder="your-email@example.com", key="portal_email_input")
+    login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
+    login_pass = st.text_input("Password", type="password", key="login_pass_field")
 
-    if st.button("Load My Dashboard", type="primary"):
-        if not portal_email:
-            st.warning("Please enter your email.")
+    if st.button("Login to My Portal", type="primary"):
+        if not login_email or not login_pass:
+            st.warning("Please enter both email and password.")
         else:
             clients_data = load_clients_data()
             found_client = None
@@ -767,73 +774,81 @@ with tab4:
 
             for idx, c in enumerate(clients_data):
                 base_c_email = c['client_email'].split(" [")[0].strip().lower()
-                if base_c_email == portal_email.strip().lower():
-                    found_client = c
-                    client_index = idx
+                if base_c_email == login_email.strip().lower():
+                    # পাসওয়ার্ড যাচাই
+                    stored_pass = c.get("password", "")
+                    if stored_pass == login_pass.strip():
+                        found_client = c
+                        client_index = idx
                     break
 
             if found_client:
                 st.session_state["portal_client"] = found_client
                 st.session_state["portal_client_index"] = client_index
-                st.success("Dashboard loaded successfully!")
+                st.success("Login successful!")
             else:
-                st.error("No active subscription found for this email.")
+                st.error("Invalid email or password.")
 
     if "portal_client" in st.session_state and st.session_state["portal_client"]:
         client_obj = st.session_state["portal_client"]
         st.markdown("---")
-        st.write(f"### Welcome, `{client_obj['client_email']}`")
+        st.write(f"### Welcome, `{client_obj['client_email'].split(' [')[0]}`")
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
 
-        st.write("#### Your Currently Tracked Products:")
+        st.write("#### Your Currently Active Tracked Products:")
         current_products = client_obj.get("products", [])
-
-        # ক্লায়েন্ট যাতে ইউআরএল এডিট বা রিমুভ করতে পারেন
-        updated_products = []
         for p_idx, prod in enumerate(current_products):
-            col_u, col_p, col_d = st.columns([3, 1, 1])
-            new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"p_url_{p_idx}")
-            new_p = col_p.number_input(f"Baseline #{p_idx+1}", value=float(prod.get("baseline_price", 0.0)), step=50.0, key=f"p_price_{p_idx}")
-            
-            # ডিলিট বাটন চেক
-            keep_product = col_d.checkbox("Keep", value=True, key=f"p_keep_{p_idx}")
-            
-            if keep_product and new_u.strip():
-                updated_products.append({
-                    "url": clean_daraz_url(new_u.strip()),
-                    "baseline_price": float(new_p)
-                })
+            st.write(f"{p_idx+1}. `{prod.get('url')}` — **Baseline:** `৳{prod.get('baseline_price')}`")
+
+        # পেন্ডিং প্রোডাক্টস লিস্ট যদি থাকে
+        pending_list = client_obj.get("pending_products", [])
+        if pending_list:
+            st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
+            for p_idx, p_prod in enumerate(pending_list):
+                st.write(f"- [Pending] `{p_prod.get('url')}` (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
 
         st.markdown("---")
-        st.write("#### Add New Product URL:")
-        new_add_url = st.text_input("New Competitor Product URL", placeholder="https://www.daraz.com.bd/products/...", key="new_add_url_field")
-        new_add_price = st.number_input("New Baseline Price (৳)", min_value=0.0, value=0.0, step=50.0, key="new_add_price_field")
+        st.write("#### ➕ Submit New Product URL(s) for More Tracking")
+        st.markdown("প্রতিটি নতুন লিংকের জন্য **৳১,২৫০** করে পেমেন্ট করে ট্রানজেকশন আইডি দিন। অ্যাডমিন যাচাই করার পর লিংকগুলো লাইভ হবে।")
 
-        if st.button("Save & Update My Products"):
-            if new_add_url.strip():
-                updated_products.append({
-                    "url": clean_daraz_url(new_add_url.strip()),
-                    "baseline_price": float(new_add_price)
-                })
+        with st.form("add_new_links_form"):
+            new_url_input = st.text_area("New Competitor Product URL(s) (One URL per line)", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
+            new_baseline_input = st.number_input("Baseline Price for these new products (৳)", min_value=0.0, value=0.0, step=50.0)
+            new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID)")
 
-            all_clients = load_clients_data()
-            c_idx = st.session_state["portal_client_index"]
-            
-            if c_idx < len(all_clients):
-                all_clients[c_idx]["products"] = updated_products
-                res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} updated product URLs")
-                
-                if res is True:
-                    st.success("✅ Products updated successfully!")
-                    st.session_state["portal_client"] = all_clients[c_idx]
-                    st.rerun()
+            if st.form_submit_button("Submit New URLs for Approval"):
+                if new_url_input.strip() and new_trx_id.strip():
+                    urls = [u.strip() for u in new_url_input.splitlines() if u.strip()]
+                    new_items_to_add = []
+                    for u in urls:
+                        new_items_to_add.append({
+                            "url": clean_daraz_url(u),
+                            "baseline_price": float(new_baseline_input),
+                            "trx_id": new_trx_id.strip()
+                        })
+
+                    all_clients = load_clients_data()
+                    c_idx = st.session_state["portal_client_index"]
+                    
+                    if c_idx < len(all_clients):
+                        if "pending_products" not in all_clients[c_idx]:
+                            all_clients[c_idx]["pending_products"] = []
+                        all_clients[c_idx]["pending_products"].extend(new_items_to_add)
+
+                        res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
+                        
+                        if res is True:
+                            st.success("✅ New URLs submitted successfully! Waiting for admin approval.")
+                            st.session_state["portal_client"] = all_clients[c_idx]
+                        else:
+                            st.error(f"Error: {res}")
                 else:
-                    st.error(f"Error updating: {res}")
+                    st.warning("Please provide URL(s) and your Transaction ID.")
 
 with tab3:
-    st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("পেমেন্ট ভেরিফাই করুন, মেয়াদ চেক করুন এবং ক্লায়েন্টের ট্র্যাক করা ইউআরএলগুলো মনিটর করুন।")
+    st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
+    st.markdown("পেমেন্ট ভেরিফাই করুন, নতুন সাবমিট করা ইউআরএলগুলো টেস্ট করে অ্যাপ্রুভ করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
@@ -909,11 +924,47 @@ with tab3:
                 st.write(f"- **Plan:** `{client_item.get('plan', 'Standard')}`")
                 st.write(f"- **TrxID:** `{client_item.get('trx_id', 'N/A (Global)')}`")
                 st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
-                st.write(f"- **Tracked Products ({len(client_item.get('products', []))} links):**")
-
+                
+                # একটিভ প্রোডাক্টস
                 products = client_item.get('products', [])
+                st.write(f"- **Active Tracked Products ({len(products)} links):**")
                 for idx, item in enumerate(products):
                     st.write(f"  {idx+1}. {item.get('url')} — **Baseline:** `৳{item.get('baseline_price')}`")
+
+                # পেন্ডিং প্রোডাক্টস (নতুন যোগ করা লিংক যা অ্যাপ্রুভ করতে হবে)
+                pending_prods = client_item.get('pending_products', [])
+                if pending_prods:
+                    st.warning(f"⏳ **Pending New Products ({len(pending_prods)} links awaiting approval):**")
+                    for p_idx, p_item in enumerate(pending_prods):
+                        st.write(f"  - [Trx: {p_item.get('trx_id')}] {p_item.get('url')} — **Baseline:** `৳{p_item.get('baseline_price')}`")
+                    
+                    if st.button(f"Approve Pending New URLs for Client #{i+1}", key=f"app_new_{i}"):
+                        with st.spinner("Testing new URLs before approval..."):
+                            link_err = None
+                            verified_new = []
+                            for p_item in pending_prods:
+                                clean_u = p_item.get('url')
+                                try:
+                                    get_competitor_data(clean_u)
+                                    verified_new.append({
+                                        "url": clean_u,
+                                        "baseline_price": p_item.get('baseline_price')
+                                    })
+                                except Exception as err:
+                                    link_err = f"URL failed ({clean_u}): {err}"
+                                    break
+                            
+                            if link_err:
+                                st.error(f"❌ Cannot approve! {link_err}")
+                            else:
+                                clients_data[i]['products'].extend(verified_new)
+                                clients_data[i]['pending_products'] = []
+                                res = update_github_clients_file(clients_data, commit_message=f"Admin approved new URLs for {client_item['client_email']}")
+                                if res is True:
+                                    st.success("✅ New URLs approved and added to active monitoring!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Error: {res}")
 
                 col_a, col_b = st.columns(2)
 
