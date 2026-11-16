@@ -76,7 +76,6 @@ def clean_daraz_url(url):
     item_id, sku_id = m.group(1), m.group(2)
     slug = filename[:m.start()].strip("-") or "item"
     tail = f"-i{item_id}" + (f"-s{sku_id}" if sku_id else "")
-    # tracking query (scm, pvid, spm ...) ইচ্ছা করেই বাদ দেওয়া হলো
     return f"https://www.daraz.com.bd/products/{slug}{tail}.html"
 
 
@@ -84,7 +83,6 @@ def clean_daraz_url(url):
 # PRICE HELPERS
 # =====================================================================
 def _to_price(v):
-    """number বা string (যেমন '৳ 1,299') থেকে float দাম বের করে।"""
     if v is None or isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
@@ -106,7 +104,6 @@ _CUR_RE = re.compile(
 
 
 def _currency_prices(text):
-    """শুধু ৳ / Tk / BDT এর সাথে লেখা সংখ্যাগুলো (unit-এর ঝামেলা নেই)।"""
     text = html_lib.unescape(str(text or ""))
     out = []
     for m in _CUR_RE.finditer(text):
@@ -116,7 +113,6 @@ def _currency_prices(text):
     return out
 
 
-# ---------- Strategy 1: skuInfos JSON (সবচেয়ে নির্ভুল) ----------
 def _price_from_sku_infos(html_text, sku_id):
     dec = json.JSONDecoder()
     variants = [html_text, html_text.replace('\\"', '"')]
@@ -131,9 +127,9 @@ def _price_from_sku_infos(html_text, sku_id):
 
             order = []
             if sku_id and str(sku_id) in infos:
-                order.append(str(sku_id))      # URL-এর নিজের variant আগে
+                order.append(str(sku_id))
             if "0" in infos:
-                order.append("0")              # default variant
+                order.append("0")
             order += [k for k in infos if k not in order]
 
             for k in order:
@@ -155,7 +151,6 @@ def _price_from_sku_infos(html_text, sku_id):
     return None
 
 
-# ---------- Strategy 2: JSON-LD ----------
 def _find_price_in_jsonld(soup):
     def walk(node):
         if isinstance(node, dict):
@@ -190,8 +185,6 @@ def _find_price_in_jsonld(soup):
 
 
 def _visible_price_from_html(html_text):
-    """পেজে ক্রেতা যে দামটা দেখে (ফ্ল্যাশ সেল সহ) সেই element থেকে দাম নেয়।
-    কাটা দাম ('deleted') বাদ।"""
     soup = BeautifulSoup(html_text, 'html.parser')
     for wanted in ('pdp-price_type_normal', 'pdp-product-price'):
         for tag in soup.find_all(['span', 'div'], class_=True):
@@ -207,8 +200,6 @@ def _visible_price_from_html(html_text):
 
 
 def _structured_price_from_html(html_text, sku_id=None):
-    """শেষ ভরসা: HTML-এর ভেতরের JSON। এখানে ফ্ল্যাশ সেলের আগের (regular) দাম
-    থাকতে পারে, তাই এটা শুধু তখনই ব্যবহার হয় যখন দৃশ্যমান দাম পাওয়া যায়নি।"""
     price_val = _price_from_sku_infos(html_text, sku_id)
     if price_val:
         return price_val
@@ -230,8 +221,8 @@ def _structured_price_from_html(html_text, sku_id=None):
             return price_val
 
     raw = (html_text.replace('\\"', '"')
-                    .replace('\\u09f3', '৳')
-                    .replace('\\u002F', '/'))
+                     .replace('\\u09f3', '৳')
+                     .replace('\\u002F', '/'))
     key_pattern = (
         r'"(?:salePrice|actPrice|minActionPrice)"\s*:\s*'
         r'(?:\{[^{}]*?"value"\s*:\s*)?"?(\d[\d,]*\.?\d*)'
@@ -287,7 +278,6 @@ def _fetch_direct(url):
 
 
 def _fetch_via_reader_html(url):
-    """Jina Reader ব্রাউজারে JS চালিয়ে রেন্ডার করা পুরো HTML দেয়।"""
     r = requests.get(
         "https://r.jina.ai/" + url,
         headers={
@@ -313,13 +303,10 @@ _PRICE_LINE_RE = re.compile(
 
 
 def _price_from_markdown(text):
-    """রেন্ডার করা পেজে H1 শিরোনামের পরে প্রথম 'শুধু দাম' লাইনটাই বর্তমান দাম
-    (যেমন '৳ 139')। '৳ 200-30%' হলো কাটা দাম, ওটা বাদ।"""
     hm = re.search(r'^# .+$', text, flags=re.MULTILINE)
     area = text[hm.end():] if hm else text
     lines = area.splitlines()
 
-    # ধাপ ১: যে লাইনে শুধু দাম আছে
     for line in lines:
         m = _PRICE_LINE_RE.match(line)
         if m:
@@ -327,7 +314,6 @@ def _price_from_markdown(text):
             if v:
                 return v
 
-    # ধাপ ২: অন্য লাইন, তবে %/voucher/shipping ইত্যাদি বাদ দিয়ে
     for line in lines:
         low = line.lower()
         if '%' in line or any(w in low for w in _NOISE_WORDS):
@@ -359,16 +345,14 @@ def _fetch_via_reader_markdown(url):
 # MAIN SCRAPER
 # =====================================================================
 def get_competitor_data(url):
-    """অগ্রাধিকার: (১) ক্রেতা যে দাম দেখে সেটা, (২) HTML-এর ভেতরের JSON (শেষ ভরসা)।"""
     try:
         clean_url = clean_daraz_url(url)
         _, sku_id = parse_daraz_ids(clean_url)
 
         title = None
         errors = []
-        json_htmls = []   # শেষ ভরসার জন্য জমিয়ে রাখা HTML
+        json_htmls = []
 
-        # ধাপ ১: সরাসরি HTML -> দৃশ্যমান দামের element
         try:
             html_text = _fetch_direct(clean_url)
             if _looks_blocked(html_text):
@@ -383,7 +367,6 @@ def get_competitor_data(url):
         except Exception as e:
             errors.append(f"direct: {e}")
 
-        # ধাপ ২: Jina রেন্ডার করা পেজ (markdown) -> শিরোনামের পরের প্রথম দাম
         try:
             r_title, r_price = _fetch_via_reader_markdown(clean_url)
             title = title or r_title
@@ -393,7 +376,6 @@ def get_competitor_data(url):
         except Exception as e:
             errors.append(f"reader-markdown: {e}")
 
-        # ধাপ ৩: Jina রেন্ডার করা HTML -> দৃশ্যমান দামের element
         try:
             html_text = _fetch_via_reader_html(clean_url)
             if _looks_blocked(html_text):
@@ -408,7 +390,6 @@ def get_competitor_data(url):
         except Exception as e:
             errors.append(f"reader-html: {e}")
 
-        # ধাপ ৪ (শেষ ভরসা): HTML-এর ভেতরের JSON (skuInfos, JSON-LD ...)
         for h in json_htmls:
             price = _structured_price_from_html(h, sku_id)
             if price:
@@ -656,26 +637,22 @@ with tab2:
                     st.warning("Please fill in all fields.")
 
     else:
-        st.markdown("### 🇧🇩 Bangladesh Local Packages")
-
-        local_plan = st.selectbox(
-            "Select Your Package",
-            [
-                "Single Product Starter (৳1,000/mo — 1 URL)",
-                "Growth Package (৳2,500/mo — Up to 5 Products)",
-                "Pro Package (৳5,000/mo — Up to 15 Products)"
-            ]
+        st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link)")
+        
+        # ড্রপডাউনের বদলে এখন ইউজার নিজের ইচ্ছামতো ১ থেকে ১০০ পর্যন্ত সংখ্যা দিতে পারবেন
+        max_links = st.number_input(
+            "How many product links do you want to monitor?", 
+            min_value=1, 
+            max_value=100, 
+            value=1, 
+            step=1
         )
-
-        if "Single Product" in local_plan:
-            max_links = 1
-            plan_name = "Single Product (1 URL)"
-        elif "Growth" in local_plan:
-            max_links = 5
-            plan_name = "Growth (5 URLs)"
-        else:
-            max_links = 15
-            plan_name = "Pro (15 URLs)"
+        
+        # প্রতি লিংকের দাম ১২৫০ টাকা ধরে মোট খরচ হিসাব করা
+        total_cost = max_links * 1250
+        plan_name = f"Custom Package ({max_links} URLs)"
+        
+        st.info(f"📌 Total Links: **{max_links}** | Total Price to Pay: **৳{total_cost:,}** (৳1,250 per link)")
 
         if payment_number:
             if st.button("📲 Show Payment Number"):
@@ -690,7 +667,7 @@ with tab2:
             st.markdown(f"**Enter Competitor URLs & Your Baseline Prices (Up to {max_links} products):**")
 
             product_inputs = []
-            for idx in range(max_links):
+            for idx in range(int(max_links)):
                 c1, c2 = st.columns([3, 1])
                 u_val = c1.text_input(
                     f"Product #{idx+1} URL",
@@ -733,7 +710,7 @@ with tab2:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("Admin password দিয়ে পেমেন্ট ভেরিফাই করুন এবং লিংক টেস্ট করে অ্যাক্টিভ করুন।")
+    st.markdown("Admin password দিয়ে পেমেন্ট ভেরিফাই করুন এবং লিংক টেস্ট করে অ্যাক্টিভ করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
