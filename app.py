@@ -586,7 +586,6 @@ def save_client_to_github(email, password, product_items, plan_name, is_local=Fa
             break
 
     if existing_client:
-        # পাসওয়ার্ড যাচাই বা আপডেট
         existing_client['password'] = password
         existing_client['products'].extend(cleaned_items)
         existing_client['plan'] = plan_name
@@ -600,7 +599,7 @@ def save_client_to_github(email, password, product_items, plan_name, is_local=Fa
             "client_email": email,
             "password": password,
             "products": cleaned_items,
-            "pending_products": [], # নতুন সাবমিট করা লিংক যা অ্যাডমিনের অনুমোদনের অপেক্ষায় থাকবে
+            "pending_products": [],
             "plan": plan_name,
             "approved": not is_local,
             "trx_id": trx_id,
@@ -775,7 +774,6 @@ with tab4:
             for idx, c in enumerate(clients_data):
                 base_c_email = c['client_email'].split(" [")[0].strip().lower()
                 if base_c_email == login_email.strip().lower():
-                    # পাসওয়ার্ড যাচাই
                     stored_pass = c.get("password", "")
                     if stored_pass == login_pass.strip():
                         found_client = c
@@ -801,7 +799,6 @@ with tab4:
         for p_idx, prod in enumerate(current_products):
             st.write(f"{p_idx+1}. `{prod.get('url')}` — **Baseline:** `৳{prod.get('baseline_price')}`")
 
-        # পেন্ডিং প্রোডাক্টস লিস্ট যদি থাকে
         pending_list = client_obj.get("pending_products", [])
         if pending_list:
             st.info(f"⏳ You have **{len(pending_list)}** new product(s) pending admin approval.")
@@ -809,42 +806,75 @@ with tab4:
                 st.write(f"- [Pending] `{p_prod.get('url')}` (Baseline: ৳{p_prod.get('baseline_price')}, TrxID: {p_prod.get('trx_id')})")
 
         st.markdown("---")
-        st.write("#### ➕ Submit New Product URL(s) for More Tracking")
-        st.markdown("প্রতিটি নতুন লিংকের জন্য **৳১,২৫০** করে পেমেন্ট করে ট্রানজেকশন আইডি দিন। অ্যাডমিন যাচাই করার পর লিংকগুলো লাইভ হবে।")
+        st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
+        
+        # ক্লায়েন্ট পোর্টালের নতুন লিংক যোগ করার ফর্ম (অনবোর্ডিং পেজের মতো ডাইনামিক)
+        new_max_links = st.number_input(
+            "How many new product links do you want to add?", 
+            min_value=1, 
+            max_value=100, 
+            value=1, 
+            step=1,
+            key="portal_new_max_links"
+        )
+        
+        new_total_cost = new_max_links * 1250
+        st.info(f"📌 Total New Links: **{new_max_links}** | Total Price to Pay: **৳{new_total_cost:,}** (৳1,250/link)")
 
-        with st.form("add_new_links_form"):
-            new_url_input = st.text_area("New Competitor Product URL(s) (One URL per line)", placeholder="https://www.daraz.com.bd/products/...\nhttps://www.daraz.com.bd/products/...")
-            new_baseline_input = st.number_input("Baseline Price for these new products (৳)", min_value=0.0, value=0.0, step=50.0)
-            new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID)")
+        if payment_number:
+            if st.button("📲 Show Payment Number", key="portal_show_pay"):
+                st.session_state["portal_show_pay_number"] = True
+            if st.session_state.get("portal_show_pay_number"):
+                st.info(f"📌 Send Money to: **{payment_number}** (bKash / Nagad / Upay / Rocket Personal)")
+        else:
+            st.warning("Payment number is not configured yet. Please contact support.")
+
+        with st.form("portal_add_new_links_form"):
+            st.markdown(f"**Enter New Competitor URLs & Baseline Prices (Up to {new_max_links} products):**")
+
+            new_product_inputs = []
+            for idx in range(int(new_max_links)):
+                c1, c2 = st.columns([3, 1])
+                u_val = c1.text_input(
+                    f"New Product #{idx+1} URL",
+                    key=f"portal_url_{new_max_links}_{idx}",
+                    placeholder="https://www.daraz.com.bd/products/..."
+                )
+                p_val = c2.number_input(
+                    f"Baseline (৳)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=50.0,
+                    key=f"portal_price_{new_max_links}_{idx}"
+                )
+                new_product_inputs.append((u_val, p_val))
+
+            new_trx_id = st.text_input("New bKash / Nagad Transaction ID (TrxID) for these links")
 
             if st.form_submit_button("Submit New URLs for Approval"):
-                if new_url_input.strip() and new_trx_id.strip():
-                    urls = [u.strip() for u in new_url_input.splitlines() if u.strip()]
-                    new_items_to_add = []
-                    for u in urls:
-                        new_items_to_add.append({
-                            "url": clean_daraz_url(u),
-                            "baseline_price": float(new_baseline_input),
-                            "trx_id": new_trx_id.strip()
-                        })
+                valid_new_products = [
+                    {"url": u.strip(), "baseline_price": float(p), "trx_id": new_trx_id.strip()}
+                    for u, p in new_product_inputs if u.strip()
+                ]
 
+                if len(valid_new_products) > 0 and new_trx_id.strip():
                     all_clients = load_clients_data()
                     c_idx = st.session_state["portal_client_index"]
                     
                     if c_idx < len(all_clients):
                         if "pending_products" not in all_clients[c_idx]:
                             all_clients[c_idx]["pending_products"] = []
-                        all_clients[c_idx]["pending_products"].extend(new_items_to_add)
+                        all_clients[c_idx]["pending_products"].extend(valid_new_products)
 
                         res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
                         
                         if res is True:
-                            st.success("✅ New URLs submitted successfully! Waiting for admin approval.")
+                            st.success(f"✅ Successfully submitted {len(valid_new_products)} new URL(s)! Waiting for admin approval.")
                             st.session_state["portal_client"] = all_clients[c_idx]
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please provide URL(s) and your Transaction ID.")
+                    st.warning("Please enter at least 1 product URL and your Transaction ID.")
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
@@ -925,13 +955,11 @@ with tab3:
                 st.write(f"- **TrxID:** `{client_item.get('trx_id', 'N/A (Global)')}`")
                 st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
                 
-                # একটিভ প্রোডাক্টস
                 products = client_item.get('products', [])
                 st.write(f"- **Active Tracked Products ({len(products)} links):**")
                 for idx, item in enumerate(products):
                     st.write(f"  {idx+1}. {item.get('url')} — **Baseline:** `৳{item.get('baseline_price')}`")
 
-                # পেন্ডিং প্রোডাক্টস (নতুন যোগ করা লিংক যা অ্যাপ্রুভ করতে হবে)
                 pending_prods = client_item.get('pending_products', [])
                 if pending_prods:
                     st.warning(f"⏳ **Pending New Products ({len(pending_prods)} links awaiting approval):**")
