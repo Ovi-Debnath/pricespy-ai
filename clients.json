@@ -8,7 +8,13 @@
                 "baseline_price": 500.0
             }
         ],
-        "pending_products": [],
+        "pending_products": [
+            {
+                "url": "https://www.daraz.com.bd/products/-i209199411-s1159437953.html?scm=1007.51610.379274.0&pvid=7dbaabf0-eb8d-4a81-aa99-e1514c4393fd&search=flashsale&spm=a2a0e.tm80335411.FlashSale.d_209199411",
+                "baseline_price": 500.0,
+                "trx_id": "2"
+            }
+        ],
         "plan": "Custom Package (1 URLs - 30 Days)",
         "approved": true,
         "trx_id": "1",
