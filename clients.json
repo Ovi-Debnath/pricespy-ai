@@ -12,7 +12,15 @@
                 "baseline_price": 500.0
             }
         ],
-        "pending_products": [],
+        "pending_products": [
+            {
+                "url": "https://www.daraz.com.bd/products/3-1-i1613574898-s12723861301.html",
+                "product_name": "Vacuum cleaner 3 in 1 Wireless Vacuum Cleaner, Wireless & Rechargeable Multi-functional Vacuum Cleaner, Portable Vacuum Cleaner Duster Blower Air Pump, Wireless Handheld Clean Microscopic Dust From Car, Computer, Laptop, Sofas, Mini Air Blower By Latfu",
+                "live_price": 0.0,
+                "baseline_price": 500.0,
+                "trx_id": "3"
+            }
+        ],
         "plan": "Custom Package (1 URLs - 30 Days)",
         "approved": true,
         "trx_id": "1",
