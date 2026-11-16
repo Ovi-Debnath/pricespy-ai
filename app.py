@@ -34,29 +34,13 @@ sender_password = st.secrets.get("SENDER_PASSWORD") or os.environ.get("SENDER_PA
 admin_password = st.secrets.get("ADMIN_PASSWORD") or os.environ.get("ADMIN_PASSWORD")
 admin_gmail = st.secrets.get("ADMIN_GMAIL") or sender_email
 payment_number = st.secrets.get("PAYMENT_NUMBER") or os.environ.get("PAYMENT_NUMBER")
-
-# Contact Gmail এখন সম্পূর্ণ st.secrets (বা environment variable) থেকে আসবে।
-# কোডে কোনো ইমেইল লেখা নেই, তাই GitHub-এ কোড দেখলে ইমেইল দেখা যাবে না।
-contact_gmail = (
-    st.secrets.get("CONTACT_GMAIL")
-    or os.environ.get("CONTACT_GMAIL")
-    or "support (contact email not configured yet)"
-)
+contact_gmail = st.secrets.get("CONTACT_GMAIL") or os.environ.get("CONTACT_GMAIL") or "ovidebnath63@gmail.com"
 
 if not api_key:
     st.error("⚠️ GEMINI_API_KEY is missing! Please configure it in Streamlit Secrets.")
     st.stop()
 
 client = genai.Client(api_key=api_key)
-
-
-# Contact Gmail শুরুতে লুকানো থাকে; ক্লায়েন্ট বাটনে ক্লিক করলে তবেই দেখাবে
-def show_contact_gmail(key_suffix):
-    state_key = f"show_contact_gmail_{key_suffix}"
-    if st.button("📧 Show Contact Gmail", key=f"btn_{state_key}"):
-        st.session_state[state_key] = True
-    if st.session_state.get(state_key):
-        st.info(f"📧 Contact us at: **{contact_gmail}**")
 
 
 # =====================================================================
@@ -587,8 +571,9 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with phone support
+# Save new client function with clean email & separate payment details
 def save_client_to_github(email, phone, password, product_inputs, plan_name, is_local=False, trx_id="", payment_method=""):
+    clean_email = email.split(" [")[0].strip()
     processed_items = []
     for item in product_inputs:
         raw_url = item.get('url')
@@ -616,11 +601,12 @@ def save_client_to_github(email, phone, password, product_inputs, plan_name, is_
     
     existing_client = None
     for c in clients:
-        if c['client_email'].split(" [")[0].strip().lower() == email.strip().lower():
+        if c['client_email'].split(" [")[0].strip().lower() == clean_email.lower():
             existing_client = c
             break
 
     if existing_client:
+        existing_client['client_email'] = clean_email
         existing_client['phone'] = phone
         existing_client['password'] = password
         existing_client['products'].extend(processed_items)
@@ -633,7 +619,7 @@ def save_client_to_github(email, phone, password, product_inputs, plan_name, is_
         existing_client['expired_notified'] = False
     else:
         new_entry = {
-            "client_email": email,
+            "client_email": clean_email,
             "phone": phone,
             "password": password,
             "products": processed_items,
@@ -649,7 +635,7 @@ def save_client_to_github(email, phone, password, product_inputs, plan_name, is_
         }
         clients.append(new_entry)
 
-    res = update_github_clients_file(clients, commit_message=f"Add/Update client monitoring for {email}")
+    res = update_github_clients_file(clients, commit_message=f"Add/Update client monitoring for {clean_email}")
     return res
 
 
@@ -658,7 +644,6 @@ tab1, tab2, tab4, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Clien
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
-    show_contact_gmail("instant")
     target_url = st.text_input(
         "Competitor Product URL",
         value="",
@@ -688,8 +673,7 @@ with tab1:
 
 with tab2:
     st.subheader("🚀 Register & Activate 24/7 Monitoring")
-    st.markdown("For any queries or support, click the button below to see our contact Gmail.")
-    show_contact_gmail("onboarding")
+    st.markdown(f"For any queries or support, please contact us at: **{contact_gmail}**")
     st.markdown("Choose your region and package to complete subscription and activate automated tracking.")
 
     market = st.radio("Select Your Market", ["Global (International)", "Bangladesh (Local)"], horizontal=True)
@@ -720,7 +704,7 @@ with tab2:
                 if email and phone and password and url:
                     with st.spinner("Activating 24/7 monitoring..."):
                         product_items = [{"url": url.strip(), "product_name": p_name_input.strip(), "baseline_price": float(baseline)}]
-                        res = save_client_to_github(email, phone, password, product_items, plan_name="Global Plan", is_local=False, payment_method="Global (Lemon Squeezy)")
+                        res = save_client_to_github(email.strip(), phone, password, product_items, plan_name="Global Plan", is_local=False, payment_method="Global (Lemon Squeezy)")
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
@@ -798,15 +782,14 @@ with tab2:
 
                 if local_email and local_phone and local_pass and len(valid_products) > 0 and trx_id:
                     with st.spinner("Processing products and submitting payment..."):
-                        formatted_email = f"{local_email} [Paid via {payment_method} - Trx: {trx_id}]"
                         res = save_client_to_github(
-                            formatted_email,
+                            local_email.strip(),
                             local_phone,
                             local_pass,
                             valid_products,
                             plan_name=plan_name,
                             is_local=True,
-                            trx_id=trx_id,
+                            trx_id=trx_id.strip(),
                             payment_method=payment_method
                         )
                         if res is True:
@@ -818,8 +801,7 @@ with tab2:
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
-    st.markdown("আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। কোনো সমস্যায় যোগাযোগ করতে নিচের বাটনে ক্লিক করুন।")
-    show_contact_gmail("portal")
+    st.markdown(f"আপনার রেজিস্টার্ড ইমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। কোনো সমস্যায় যোগাযোগ করুন: **{contact_gmail}**")
 
     with st.form("client_login_form"):
         login_email = st.text_input("Email", placeholder="your-email@example.com", key="login_email_field")
@@ -906,7 +888,7 @@ with tab4:
                     c_idx = st.session_state["portal_client_index"]
                     if c_idx < len(all_clients):
                         all_clients[c_idx]["products"] = updated_products_list
-                        res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} updated/deleted products")
+                        res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email'].split(' [')[0]} updated/deleted products")
                         if res is True:
                             st.success("✅ Products updated successfully!")
                             st.session_state["portal_client"] = all_clients[c_idx]
@@ -1010,7 +992,7 @@ with tab4:
                                 all_clients[c_idx]["pending_products"] = []
                             all_clients[c_idx]["pending_products"].extend(new_items_to_add)
 
-                            res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} submitted new URLs for approval")
+                            res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email'].split(' [')[0]} submitted new URLs for approval")
                             
                             if res is True:
                                 st.success(f"✅ Successfully submitted {len(new_items_to_add)} new URL(s) via {portal_pay_method}! Waiting for admin approval.")
@@ -1022,7 +1004,7 @@ with tab4:
 
 with tab3:
     st.subheader("🔒 Admin Payment Verification & URL Approval Dashboard")
-    st.markdown("অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন।")
+    st.markdown(f"অ্যাডমিনের প্রধান জিমেইল এবং পাসওয়ার্ড দিয়ে লগইন করুন। যোগাযোগ: **{contact_gmail}**")
 
     with st.form("admin_login_form"):
         input_admin_gmail = st.text_input("Admin Gmail", placeholder="your-admin-email@gmail.com")
@@ -1140,7 +1122,7 @@ with tab3:
                             
                             clients_data[i]['products'].extend(verified_new)
                             clients_data[i]['pending_products'] = []
-                            res = update_github_clients_file(clients_data, commit_message=f"Admin approved new URLs for {client_item['client_email']}")
+                            res = update_github_clients_file(clients_data, commit_message=f"Admin approved new URLs for {client_item['client_email'].split(' [')[0]}")
                             if res is True:
                                 st.success("✅ New URLs approved and added to active monitoring!")
                                 st.rerun()
@@ -1190,7 +1172,7 @@ with tab3:
                                 clients_data[i]["reminder_sent"] = False
                                 clients_data[i]["expired_notified"] = False
                                 
-                                res = update_github_clients_file(clients_data, commit_message=f"Approve/Renew client {client_item['client_email']}")
+                                res = update_github_clients_file(clients_data, commit_message=f"Approve/Renew client {client_item['client_email'].split(' [')[0]}")
 
                                 if res is True:
                                     mail_sent, mail_msg = send_activation_email(client_item['client_email'], verified_list)
@@ -1204,7 +1186,7 @@ with tab3:
 
                 if col_b.button(f"Remove Client #{i+1}", key=f"del_{i}"):
                     removed_client = clients_data.pop(i)
-                    res = update_github_clients_file(clients_data, commit_message=f"Remove client {removed_client['client_email']}")
+                    res = update_github_clients_file(clients_data, commit_message=f"Remove client {removed_client['client_email'].split(' [')[0]}")
                     if res is True:
                         st.warning("Client removed and changes saved to GitHub!")
                         st.rerun()
