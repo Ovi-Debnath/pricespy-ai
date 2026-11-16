@@ -578,24 +578,42 @@ def save_client_to_github(email, product_items, plan_name, is_local=False, trx_i
     expiry_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
     clients = load_clients_data()
-    new_entry = {
-        "client_email": email,
-        "products": cleaned_items,
-        "plan": plan_name,
-        "approved": not is_local,
-        "trx_id": trx_id,
-        "created_at": created_date,
-        "expiry_date": expiry_date,
-        "reminder_sent": False,
-        "expired_notified": False
-    }
-    clients.append(new_entry)
-    res = update_github_clients_file(clients, commit_message=f"Add client monitoring for {email}")
+    
+    # যদি একই ইমেইল ইতিপূর্বে থাকে, তবে নতুন প্রোডাক্টগুলো তার সাথে যুক্ত বা আপডেট হবে
+    existing_client = None
+    for c in clients:
+        if c['client_email'].split(" [")[0].strip().lower() == email.split(" [")[0].strip().lower():
+            existing_client = c
+            break
+
+    if existing_client:
+        existing_client['products'].extend(cleaned_items)
+        existing_client['plan'] = plan_name
+        existing_client['expiry_date'] = expiry_date
+        existing_client['approved'] = not is_local
+        existing_client['trx_id'] = trx_id
+        existing_client['reminder_sent'] = False
+        existing_client['expired_notified'] = False
+    else:
+        new_entry = {
+            "client_email": email,
+            "products": cleaned_items,
+            "plan": plan_name,
+            "approved": not is_local,
+            "trx_id": trx_id,
+            "created_at": created_date,
+            "expiry_date": expiry_date,
+            "reminder_sent": False,
+            "expired_notified": False
+        }
+        clients.append(new_entry)
+
+    res = update_github_clients_file(clients, commit_message=f"Add/Update client monitoring for {email}")
     return res
 
 
 # --- UI TABS ---
-tab1, tab2, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "🔒 Admin Dashboard"])
+tab1, tab2, tab4, tab3 = st.tabs(["🔍 Instant Price Check", "⚙️ 24/7 Client Onboarding", "👤 Client Portal", "🔒 Admin Dashboard"])
 
 with tab1:
     st.subheader("Run Instant Competitor Analysis")
@@ -733,9 +751,89 @@ with tab2:
                 else:
                     st.warning("Please enter your email, at least 1 product URL, and your Transaction ID.")
 
+with tab4:
+    st.subheader("👤 Client Portal: Manage & Update Your Tracked URLs")
+    st.markdown("আপনার রেজিস্টার্ড ইমেইল দিয়ে লগইন করে আপনার বর্তমান ট্র্যাক করা প্রোডাক্টগুলো দেখুন এবং নতুন ইউআরএল যুক্ত করুন।")
+
+    portal_email = st.text_input("Enter Your Registered Email", placeholder="your-email@example.com", key="portal_email_input")
+
+    if st.button("Load My Dashboard", type="primary"):
+        if not portal_email:
+            st.warning("Please enter your email.")
+        else:
+            clients_data = load_clients_data()
+            found_client = None
+            client_index = -1
+
+            for idx, c in enumerate(clients_data):
+                base_c_email = c['client_email'].split(" [")[0].strip().lower()
+                if base_c_email == portal_email.strip().lower():
+                    found_client = c
+                    client_index = idx
+                    break
+
+            if found_client:
+                st.session_state["portal_client"] = found_client
+                st.session_state["portal_client_index"] = client_index
+                st.success("Dashboard loaded successfully!")
+            else:
+                st.error("No active subscription found for this email.")
+
+    if "portal_client" in st.session_state and st.session_state["portal_client"]:
+        client_obj = st.session_state["portal_client"]
+        st.markdown("---")
+        st.write(f"### Welcome, `{client_obj['client_email']}`")
+        st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
+        st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
+
+        st.write("#### Your Currently Tracked Products:")
+        current_products = client_obj.get("products", [])
+
+        # ক্লায়েন্ট যাতে ইউআরএল এডিট বা রিমুভ করতে পারেন
+        updated_products = []
+        for p_idx, prod in enumerate(current_products):
+            col_u, col_p, col_d = st.columns([3, 1, 1])
+            new_u = col_u.text_input(f"URL #{p_idx+1}", value=prod.get("url", ""), key=f"p_url_{p_idx}")
+            new_p = col_p.number_input(f"Baseline #{p_idx+1}", value=float(prod.get("baseline_price", 0.0)), step=50.0, key=f"p_price_{p_idx}")
+            
+            # ডিলিট বাটন চেক
+            keep_product = col_d.checkbox("Keep", value=True, key=f"p_keep_{p_idx}")
+            
+            if keep_product and new_u.strip():
+                updated_products.append({
+                    "url": clean_daraz_url(new_u.strip()),
+                    "baseline_price": float(new_p)
+                })
+
+        st.markdown("---")
+        st.write("#### Add New Product URL:")
+        new_add_url = st.text_input("New Competitor Product URL", placeholder="https://www.daraz.com.bd/products/...", key="new_add_url_field")
+        new_add_price = st.number_input("New Baseline Price (৳)", min_value=0.0, value=0.0, step=50.0, key="new_add_price_field")
+
+        if st.button("Save & Update My Products"):
+            if new_add_url.strip():
+                updated_products.append({
+                    "url": clean_daraz_url(new_add_url.strip()),
+                    "baseline_price": float(new_add_price)
+                })
+
+            all_clients = load_clients_data()
+            c_idx = st.session_state["portal_client_index"]
+            
+            if c_idx < len(all_clients):
+                all_clients[c_idx]["products"] = updated_products
+                res = update_github_clients_file(all_clients, commit_message=f"Client {client_obj['client_email']} updated product URLs")
+                
+                if res is True:
+                    st.success("✅ Products updated successfully!")
+                    st.session_state["portal_client"] = all_clients[c_idx]
+                    st.rerun()
+                else:
+                    st.error(f"Error updating: {res}")
+
 with tab3:
     st.subheader("🔒 Admin Payment Verification Dashboard")
-    st.markdown("পেমেন্ট ভেরিফাই করুন, মেয়াদ চেক করুন এবং রিমাইন্ডার ইমেইল ম্যানেজ করুন।")
+    st.markdown("পেমেন্ট ভেরিফাই করুন, মেয়াদ চেক করুন এবং ক্লায়েন্টের ট্র্যাক করা ইউআরএলগুলো মনিটর করুন।")
 
     admin_pass = st.text_input("Admin Password", type="password")
 
@@ -756,7 +854,6 @@ with tab3:
                     expiry_date_obj = datetime.strptime(expiry, "%Y-%m-%d")
                     delta_days = (expiry_date_obj - today).days
 
-                    # ১. যদি মেয়াদ শেষ হওয়ার ঠিক ৩ দিন বাকি থাকে এবং রিমাইন্ডার না পাঠানো হয়ে থাকে
                     if 0 <= delta_days <= 3 and not client_item.get("reminder_sent", False):
                         sub = "⚠️ Your PriceSpy AI Subscription is Expiring Soon!"
                         body = (
@@ -769,13 +866,11 @@ with tab3:
                         client_item["reminder_sent"] = True
                         data_updated = True
 
-                    # ২. যদি মেয়াদ শেষ হয়ে যায়
                     if today_str > expiry:
                         if client_item.get("approved", True):
                             client_item["approved"] = False
                             data_updated = True
 
-                        # এক্সপায়ারি নোটিফিকেশন একবার পাঠানোর জন্য
                         if not client_item.get("expired_notified", False):
                             sub = "❌ Your PriceSpy AI Subscription Has Expired"
                             body = (
@@ -814,7 +909,7 @@ with tab3:
                 st.write(f"- **Plan:** `{client_item.get('plan', 'Standard')}`")
                 st.write(f"- **TrxID:** `{client_item.get('trx_id', 'N/A (Global)')}`")
                 st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
-                st.write(f"- **Tracked Products:**")
+                st.write(f"- **Tracked Products ({len(client_item.get('products', []))} links):**")
 
                 products = client_item.get('products', [])
                 for idx, item in enumerate(products):
@@ -855,7 +950,6 @@ with tab3:
                             else:
                                 clients_data[i]["approved"] = True
                                 clients_data[i]["products"] = cleaned_products
-                                # রিনিউ করার সময় নতুন করে ৩০ দিনের মেয়াদ এবং ফ্লাগ রিসেট করা
                                 clients_data[i]["created_at"] = datetime.now().strftime("%Y-%m-%d")
                                 clients_data[i]["expiry_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                                 clients_data[i]["reminder_sent"] = False
