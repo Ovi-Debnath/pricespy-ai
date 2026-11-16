@@ -573,8 +573,8 @@ def send_notification_email(to_email, subject, body):
         return False, str(e)
 
 
-# Save new client function with payment method support
-def save_client_to_github(email, password, product_inputs, plan_name, is_local=False, trx_id="", payment_method=""):
+# Save new client function with phone support
+def save_client_to_github(email, phone, password, product_inputs, plan_name, is_local=False, trx_id="", payment_method=""):
     processed_items = []
     for item in product_inputs:
         raw_url = item.get('url')
@@ -607,6 +607,7 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
             break
 
     if existing_client:
+        existing_client['phone'] = phone
         existing_client['password'] = password
         existing_client['products'].extend(processed_items)
         existing_client['plan'] = plan_name
@@ -619,6 +620,7 @@ def save_client_to_github(email, password, product_inputs, plan_name, is_local=F
     else:
         new_entry = {
             "client_email": email,
+            "phone": phone,
             "password": password,
             "products": processed_items,
             "pending_products": [],
@@ -692,22 +694,23 @@ with tab2:
         st.markdown("---")
         with st.form("global_client_form"):
             email = st.text_input("Your Email (used in checkout)")
+            phone = st.text_input("Phone Number", placeholder="e.g., +88017XXXXXXXX")
             password = st.text_input("Create Password (for client portal login)", type="password")
             p_name_input = st.text_input("Custom Product Name (Optional)", placeholder="e.g., Wireless Earbuds")
             url = st.text_input("Competitor URL to Track", placeholder="Paste competitor product URL here...")
             baseline = st.number_input("Your Baseline Price ($ USD)", min_value=0.0, value=0.0, step=1.0)
 
             if st.form_submit_button("Activate Global Bot", use_container_width=True):
-                if email and password and url:
+                if email and phone and password and url:
                     with st.spinner("Activating 24/7 monitoring..."):
                         product_items = [{"url": url.strip(), "product_name": p_name_input.strip(), "baseline_price": float(baseline)}]
-                        res = save_client_to_github(email, password, product_items, plan_name="Global Plan", is_local=False, payment_method="Global (Lemon Squeezy)")
+                        res = save_client_to_github(email, phone, password, product_items, plan_name="Global Plan", is_local=False, payment_method="Global (Lemon Squeezy)")
                         if res is True:
                             st.success(f"✅ Global monitoring active for {email}!")
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please fill in all required fields including password.")
+                    st.warning("Please fill in all required fields including phone and password.")
 
     else:
         st.markdown("### 🇧🇩 Bangladesh Custom Package (৳1,250 per Link - 30 Days Validity)")
@@ -735,6 +738,7 @@ with tab2:
 
         with st.form("local_client_form"):
             local_email = st.text_input("Your Email (for receiving alerts)")
+            local_phone = st.text_input("Phone Number", placeholder="e.g., 017XXXXXXXX")
             local_pass = st.text_input("Create Password (for client portal login)", type="password")
             st.markdown(f"**Enter Product Names, Competitor URLs & Baseline Prices (Up to {max_links} products):**")
 
@@ -756,7 +760,6 @@ with tab2:
                 )
                 product_inputs.append((name_val, u_val, p_val))
 
-            # পেমেন্ট মাধ্যম সিলেক্ট করার জন্য ডপডাউন অপশন (bKash, Nagad, Upay, Rocket)
             payment_method = st.selectbox(
                 "Select Payment Method",
                 ["bKash", "Nagad", "Upay", "Rocket"]
@@ -777,11 +780,12 @@ with tab2:
                             "baseline_price": clean_p
                         })
 
-                if local_email and local_pass and len(valid_products) > 0 and trx_id:
+                if local_email and local_phone and local_pass and len(valid_products) > 0 and trx_id:
                     with st.spinner("Processing products and submitting payment..."):
                         formatted_email = f"{local_email} [Paid via {payment_method} - Trx: {trx_id}]"
                         res = save_client_to_github(
                             formatted_email,
+                            local_phone,
                             local_pass,
                             valid_products,
                             plan_name=plan_name,
@@ -794,7 +798,7 @@ with tab2:
                         else:
                             st.error(f"Error: {res}")
                 else:
-                    st.warning("Please enter your email, password, at least 1 product URL, and your Transaction ID.")
+                    st.warning("Please enter your email, phone, password, at least 1 product URL, and your Transaction ID.")
 
 with tab4:
     st.subheader("👤 Client Portal: Secure Login, Update, Delete & Add URLs")
@@ -833,6 +837,8 @@ with tab4:
         client_obj = st.session_state["portal_client"]
         st.markdown("---")
         st.write(f"### Welcome, `{client_obj['client_email'].split(' [')[0]}`")
+        st.write(f"**Phone Number:** `{client_obj.get('phone', 'N/A')}`")
+        st.write(f"**Gmail:** `{client_obj['client_email'].split(' [')[0]}`")
         st.write(f"**Subscription Expiry Date:** `{client_obj.get('expiry_date', 'N/A')}`")
         st.write(f"**Payment Method & TrxID:** `{client_obj.get('payment_method', 'N/A')} (Trx: {client_obj.get('trx_id', 'N/A')})`")
         st.write(f"**Status:** `{'Active 🟢' if client_obj.get('approved', True) else 'Pending / Expired 🔴'}`")
@@ -1083,7 +1089,8 @@ with tab3:
                     status_badge = "🟡 Pending Payment"
 
                 st.write(f"**Client #{i+1}** — Status: {status_badge}")
-                st.write(f"- **Email / Info:** `{client_item['client_email']}`")
+                st.write(f"- **Gmail:** `{client_item['client_email'].split(' [')[0]}`")
+                st.write(f"- **Phone Number:** `{client_item.get('phone', 'N/A')}`")
                 st.write(f"- **Plan:** `{client_item.get('plan', 'Standard')}`")
                 st.write(f"- **Payment Method & TrxID:** `{client_item.get('payment_method', 'N/A')} (Trx: {client_item.get('trx_id', 'N/A')})`")
                 st.write(f"- **Created Date:** `{client_item.get('created_at', 'N/A')}` | **Expiry Date:** `{expiry}`")
